@@ -216,6 +216,24 @@ Hai bẫy đã ghim sẵn trong script, đừng gỡ:
 - Dùng `127.0.0.1`, không dùng `localhost`: localhost phân giải ra ::1 trước mà cầu
   chuyển cổng của WSL2 chỉ chuyển IPv4.
 
+### Phiên bản Python
+
+**Dùng Python 3.12 hoặc 3.13. KHÔNG dùng 3.14.**
+
+Các bản ghim trong `requirements.txt` thuộc thế hệ trước Python 3.14, nên trên
+3.14 thì `asyncpg`, `h3`, `pydantic-core`, `numpy`, `shapely` **đều không có
+wheel** — pip sẽ cố biên dịch từ mã nguồn, cần MSVC và Rust. Trên máy không có
+Visual Studio Build Tools thì hỏng hoàn toàn, và thông báo lỗi không hề nói rằng
+nguyên nhân là phiên bản Python.
+
+Đã đo trên máy sạch (Windows 10, Python 3.14.2): không cài được gói nào.
+Cùng máy đó với Python 3.12.10: cài trọn vẹn.
+
+```bash
+py -3.12 -m venv .venv      # Windows
+python3.12 -m venv .venv    # Linux/macOS
+```
+
 ### BB-Core (backend)
 ```bash
 cd bb-core
