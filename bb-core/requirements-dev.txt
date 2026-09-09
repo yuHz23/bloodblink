@@ -1,0 +1,8 @@
+# Gói chỉ dùng để CHẠY TEST, không cần trên máy chủ.
+#
+# Tách riêng để máy chủ không phải cài pytest. Dùng:
+#     pip install -r requirements.txt -r requirements-dev.txt
+
+pytest==9.0.3
+pytest-asyncio==1.4.0
+aiosqlite==0.22.1

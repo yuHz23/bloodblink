@@ -25,3 +25,13 @@ httpx==0.28.1
 numpy>=2.3.2
 faker==33.0.0
 h3==4.1.0
+
+# PyJWT và APScheduler: BẮT BUỘC, trước đây thiếu hẳn trong tệp này.
+#
+# `app/services/auth.py` import `jwt` ngay dòng đầu và `app/services/scheduler.py`
+# import `apscheduler` — thiếu một trong hai thì máy chủ KHÔNG khởi động nổi, và
+# `seed_db` cũng chết ngay ở bước tạo tài khoản. Laptop chạy được chỉ vì hai gói
+# này đã có sẵn trong môi trường từ trước; chưa ai cài dự án từ số không nên
+# không lộ ra.
+PyJWT==2.12.1
+APScheduler==3.11.2
