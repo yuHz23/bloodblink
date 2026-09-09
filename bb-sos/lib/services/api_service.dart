@@ -16,15 +16,21 @@ import 'package:hive/hive.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Máy chủ mặc định: laptop chạy bb-core, truy cập qua Tailscale.
+/// Máy chủ mặc định: NUC chạy bb-core 24/7, truy cập qua Tailscale.
+///
+/// Chuyển từ laptop sang NUC vì laptop phải bật máy suốt và phải giữ một tiến
+/// trình WSL sống thì Postgres mới thông. NUC chạy Postgres bản native cho
+/// Windows, đăng ký thành dịch vụ, và bb-core là một Scheduled Task khởi động
+/// cùng máy — rút điện cắm lại thì tự lên sau khoảng 90 giây.
+///
 /// Ghi đè lúc build bằng: flutter build apk --dart-define=API_URL=...
 const String kDefaultApiUrl = String.fromEnvironment(
   'API_URL',
-  defaultValue: 'http://laptop-rrqk96mj.tail85e1ba.ts.net:8000/api',
+  defaultValue: 'http://desktop-kijp57s.tail85e1ba.ts.net:8000/api',
 );
 
 /// Dự phòng khi điện thoại không phân giải được MagicDNS.
-const String kFallbackApiUrl = 'http://100.101.73.36:8000/api';
+const String kFallbackApiUrl = 'http://100.106.118.107:8000/api';
 
 class ApiException implements Exception {
   final String message;
