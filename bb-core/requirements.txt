@@ -8,7 +8,10 @@ pydantic==2.10.4
 pydantic-settings==2.7.1
 geoalchemy2==0.16.0
 shapely==2.0.6
-timescaledb==0.1.1
+# timescaledb ĐÃ BỎ. Gói Python này chưa từng được import ở đâu — TimescaleDB
+# là một EXTENSION của Postgres, không phải thư viện Python. Và bản 0.1.1 đã bị
+# gỡ khỏi PyPI, nên để nguyên là `pip install -r` hỏng ngay từ máy sạch: cả tệp
+# không cài được gì, kể cả fastapi. `seed_db` vốn đã bỏ qua nếu thiếu extension.
 httpx==0.28.1
 numpy==2.2.1
 faker==33.0.0
