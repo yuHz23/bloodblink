@@ -15,6 +15,26 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/nearby_facility_service.dart';
 import '../theme/bb_colors.dart';
 
+/// Tên tuyến bằng tiếng Việt.
+///
+/// Máy chủ trả về giá trị enum thô (`hospital`, `regional`…) — hiện thẳng lên
+/// màn hình thì ra "Tuyến hospital", vừa khó đọc vừa lộ ra là chưa ai nhìn kỹ
+/// màn này. Giá trị lạ thì trả về nguyên văn còn hơn để trống.
+String _tierLabel(String tier) {
+  switch (tier.toLowerCase()) {
+    case 'national':
+      return 'Tuyến trung ương';
+    case 'regional':
+      return 'Trung tâm truyền máu khu vực';
+    case 'hospital':
+      return 'Bệnh viện có khoa huyết học – truyền máu';
+    case 'district':
+      return 'Tuyến quận / huyện';
+    default:
+      return 'Tuyến $tier';
+  }
+}
+
 class NearbyFacilitiesScreen extends StatefulWidget {
   /// Khi mở từ một lời kêu gọi, truyền mã cơ sở phát để làm nổi nó lên.
   final String? highlightFacilityId;
@@ -219,7 +239,7 @@ class _NearbyFacilitiesScreenState extends State<NearbyFacilitiesScreen> {
                               fontWeight: FontWeight.w600,
                               color: bb.strong)),
                       const SizedBox(height: 3),
-                      Text('Tuyến ${f.tier}',
+                      Text(_tierLabel(f.tier),
                           style: TextStyle(fontSize: 12.5, color: bb.muted)),
                     ],
                   ),
