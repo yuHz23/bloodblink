@@ -61,14 +61,22 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173",   # Vite dev server (BB-Console)
-        "http://localhost:3000",   # Alternative dev port
         "http://10.0.2.2:8000",   # Android emulator → host
-        "http://localhost:8000",   # iOS simulator
     ],
-    # Máy chủ tạm chạy trên laptop qua Tailscale — cho phép mọi origin trong
-    # tailnet gọi tới (BB-Console mở từ điện thoại, máy khác trong nhóm).
-    allow_origin_regex=r"^https?://([a-z0-9-]+\.)*ts\.net(:\d+)?$|^http://100\.\d+\.\d+\.\d+(:\d+)?$",
+    # Hai nhóm origin được phép:
+    #
+    # 1. localhost / 127.0.0.1 ở BẤT KỲ cổng nào. Trước đây chỗ này ghim cứng
+    #    5173; Vite tự nhảy sang 5174 khi 5173 đã bị chiếm, và console báo
+    #    "Failed to fetch" mà không nói lý do — mất khá nhiều thời gian mới lần
+    #    ra là preflight bị chặn chứ không phải sai mật khẩu. Máy chủ này chỉ
+    #    mở trong tailnet nên nới cổng ở localhost không mở rộng bề mặt tấn công.
+    # 2. Máy trong tailnet (MagicDNS *.ts.net hoặc IP 100.x) — console mở từ
+    #    điện thoại hay máy khác trong nhóm.
+    allow_origin_regex=(
+        r"^http://(localhost|127\.0\.0\.1)(:\d+)?$"
+        r"|^https?://([a-z0-9-]+\.)*ts\.net(:\d+)?$"
+        r"|^http://100\.\d+\.\d+\.\d+(:\d+)?$"
+    ),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
