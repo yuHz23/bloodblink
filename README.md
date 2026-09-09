@@ -19,13 +19,13 @@ BB-Box (ESP32-S3) ────┘── REST ────────── BB-C
 
 | Module | Công nghệ | Mô tả | Tests |
 |--------|-----------|-------|-------|
-| `bb-core/` | Python 3.12 + FastAPI + SQLAlchemy | Backend API, matching engine, ABO/RhD, FHIR R5 | 115 |
-| `bb-console/` | React + Vite + TypeScript | Dashboard quản lý | ✓ |
-| `bb-sos/` | Flutter + Riverpod + Hive | Mobile app người hiến máu | 19 |
+| `bb-core/` | Python 3.12 + FastAPI + SQLAlchemy | Backend API, matching engine, ABO/RhD, SOS, ghi vết, FHIR R5 | 226 |
+| `bb-console/` | React + Vite + TypeScript | Dashboard cơ sở y tế + bản đồ điều phối | ✓ |
+| `bb-sos/` | Flutter + Riverpod + Hive | App người hiến máu | 38 |
 | `bb-box/` | ESP32-S3 + FreeRTOS + Arduino | Cảm biến nhiệt độ chuỗi lạnh | 46 |
 | `bb-sim/` | Python | Mô phỏng sự kiện rời rạc | ✓ |
 
-**Tổng: 180 tests pass**
+**Tổng: 310 tests pass** (226 + 38 + 46; phần C++ của bb-box cần PlatformIO)
 
 ## 🔑 Tính năng chính
 
@@ -107,6 +107,14 @@ bảng `donor` chỉ có dữ liệu seed và không cơ sở nào tìm ra ngư�
 | `DELETE` | `/api/donors/{id}/geocell` | Rút lại đồng ý chia sẻ vị trí |
 | `POST` | `/api/donors/{id}/donation` | Ghi nhận một lần hiến (mốc Điều 6) |
 | `POST` | `/api/donors/{id}/verify` | Cơ sở y tế xác minh người hiến |
+
+Nhóm endpoint cho bản đồ và cho việc nối ghép nguồn với SOS:
+
+| Method | Endpoint | Mục đích |
+|--------|----------|----------|
+| `GET` | `/api/inventory/by-facility` | Tồn kho theo **cơ sở × nhóm máu**, chỉ đếm còn hạn |
+| `GET` | `/api/sos/events?status=open` | Các lời kêu gọi đang mở — chấm nhu cầu lên bản đồ |
+| `GET` | `/api/sos/donors/density` | Mật độ người hiến theo ô lưới H3, có k-ẩn danh. **Không trả mã người hiến nào** |
 | `GET` | `/api/donors?abo=O&rh=%2B` | Tra người cùng nhóm máu toàn thành phố |
 | `PUT` | `/api/donors/{id}/push-token` | Đăng ký thiết bị nhận thông báo đẩy |
 | `GET` | `/api/donors/{id}/sos-inbox` | Hộp thư lời kêu gọi đang chờ trả lời |
@@ -121,7 +129,64 @@ chế phẩm → vòng, kết quả là danh sách ẩn danh kèm nút xác minh
 Máy chủ **không nhận** họ tên và toạ độ thô: app tự quy toạ độ thành ô lưới H3
 trên máy rồi chỉ gửi chỉ số ô kèm TTL.
 
-### 4. Routing + ETA thật
+### 4. Tìm kho trước, huy động người hiến sau
+
+Thứ tự này là **kết luận về mặt thời gian**, không phải lựa chọn giao diện.
+
+Một đơn vị máu vừa lấy từ người hiến phải qua sàng lọc bắt buộc (HIV, HBV, HCV,
+giang mai — Điều 14–15 TT 26/2013), tách chế phẩm, định nhóm, rồi phản ứng hoà
+hợp với người bệnh: nhanh nhất cũng vài giờ. Máu trong kho viện khác **đã qua
+hết các bước đó** — chỉ còn hoà hợp và vận chuyển, mà ETA nội thành đo được là
+5,8 phút.
+
+Nên với mức khẩn *"Cấp cứu — cần trong 2 giờ"* của chính hệ thống, **huy động
+người hiến không kịp cứu chính ca đó**. Giao diện nói thẳng điều này thay vì để
+người điều phối ngồi chờ một thứ không tới.
+
+Huy động người hiến có nghĩa ở bốn chỗ, và `app/services/sos_advice.py` phân
+biệt đúng bốn chỗ ấy sau mỗi lần tìm nguồn:
+
+| Tình huống | Kết luận | Đề nghị |
+|---|---|---|
+| Không có đơn vị tương hợp nào | **Bắt buộc** | Giữ mức khẩn của ca, vòng 0 |
+| Kho chỉ đáp ứng một phần | **Bắt buộc** | Chỉ gọi đúng phần thiếu |
+| Rút xong kho nguồn tụt sát ngưỡng an toàn | **Khuyến nghị bù** | Ép `routine`, vòng 2 |
+| Đủ, kho vẫn dày, nhóm phổ biến | Không cần | — |
+
+Nhánh thứ ba đảo ngược cách hiểu thông thường: **điều chuyển thành công vẫn nên
+mở SOS**. Rút một đơn vị O⁻ khỏi kho thành phố là làm mỏng lớp phòng thủ cho ca
+kế tiếp, và không ai đang cuống mà nhớ ra điều đó. Lời kêu gọi để bù kho bị ép
+về mức `routine` — gắn nhãn cấp cứu cho việc không cấp cứu sẽ làm nhãn đó mất
+thiêng với người hiến.
+
+### 5. Bản đồ điều phối
+
+Ba lớp trên một khung nhìn (`bb-console/src/pages/MapView.tsx`, Leaflet):
+
+- **Bệnh viện** — chấm to nhỏ theo số đơn vị, tô đỏ→xanh theo mức tồn của nhóm
+  máu đang lọc. Chỉ đếm đơn vị **còn hạn**.
+- **Ca đang cần** — ghim gom theo cơ sở. Một bệnh viện mở nhiều ca thì hiện
+  `"3 ca"`; rải ghim ra quanh cho đỡ chồng là đặt ca vào chỗ nó không nằm ở đó.
+- **Người hiến** — ô lưới H3 tô đậm theo mật độ, **không bao giờ là chấm cá
+  nhân**. Hệ thống chỉ lưu ô lưới ~1,2 km chứ không lưu toạ độ, nên bản đồ này
+  không thể chỉ ra ai đang ở đâu — kể cả khi muốn.
+
+`GET /api/sos/donors/density` còn áp **k-ẩn danh**: ô nào có ít hơn `min_donors`
+(mặc định 3) người thì bỏ hẳn khỏi kết quả. Một ô chỉ có đúng một người, đặt
+cạnh một tấm ảnh hay một lời kể, là đủ để lần ra người đó. Bản đồ hiển thị số ô
+bị ẩn thay vì giấu luôn việc mình đang giấu.
+
+### 6. Bệnh viện gần bạn (app)
+
+Người hiến nhận lời xong thì câu hỏi kế tiếp luôn là *"đi đâu, xa không"*.
+App tải toạ độ bệnh viện về — dữ liệu công khai — rồi **tính khoảng cách ngay
+trên máy**; vị trí thô không rời khỏi thiết bị. Nút chỉ đường mở lược đồ `geo:`
+để Android tự hỏi chọn ứng dụng bản đồ, không ép cài Google Maps.
+
+Không cấp quyền vị trí thì **vẫn hiện đủ danh sách**, chỉ thiếu khoảng cách —
+thiếu GPS không phải lý do để chặn cả màn hình.
+
+### 7. Routing + ETA thật
 - RoutingProvider interface: StraightLine (haversine) + OSRM
 - ETA cache theo cơ sở, emergency mode (40 km/h)
 - 20 cặp ETA giữa 8 bệnh viện TP.HCM
@@ -222,22 +287,25 @@ bloodblink/
 │   ├── app/
 │   │   ├── api/       # REST endpoints (inventory, matching, sos, routing)
 │   │   ├── models/     # SQLAlchemy models + seed data
-│   │   ├── services/   # Business logic (compatibility, matching, routing)
+│   │   ├── services/   # compatibility, matching, routing, sos_dispatch,
+│   │   │                #   sos_advice (nối ghép nguồn ↔ SOS), audit, auth
 │   │   └── config.py
-│   ├── tests/          # 115 tests
+│   ├── tests/          # 226 tests
 │   └── seed/           # Database seed script
 ├── bb-console/         # React dashboard
 │   ├── src/
-│   │   ├── pages/      # Dashboard, Inventory, Matching, SOS, Routing
+│   │   ├── pages/      # Dashboard, Inventory, Matching, Donors, SOS,
+│   │   │                #   MapView, Routing, Reports
 │   │   └── lib/api.ts  # API client
 │   └── package.json
 ├── bb-sos/             # Flutter mobile app
 │   ├── lib/
 │   │   ├── models/     # DonorProfile, DonationType, H3Config, SosRing
-│   │   ├── screens/    # Home, SOS active, Profile, History, Settings
+│   │   ├── screens/    # Home, SOS active, Profile, History, Settings,
+│   │   │                #   NearbyFacilities
 │   │   ├── services/   # API service (offline-first)
 │   │   └── widgets/    # BloodTypeBadge, EligibilityCard, RingProgress
-│   └── test/           # 19 tests
+│   └── test/           # 38 tests
 ├── bb-box/             # ESP32-S3 firmware
 │   ├── include/        # config.h, shipment_reading.h
 │   ├── src/main.cpp    # FreeRTOS tasks (sensor, upload, LED)
@@ -248,6 +316,40 @@ bloodblink/
 ├── demo_script.py      # 5-minute demo walkthrough
 └── docker-compose.osrm.yml  # OSRM self-hosted (Vietnam OSM)
 ```
+
+## 🔐 Bí mật và cấu hình
+
+Ba thứ **không** nằm trong kho, cố ý (xem `.gitignore`):
+
+| Tệp | Lộ ra thì sao |
+|---|---|
+| `bb-core/.env` | Chứa `JWT_SECRET`. Lộ khoá ký token nghĩa là ai cũng tự tạo được token của bất kỳ ai |
+| `bb-sos/android/app/*.jks` | Khoá ký APK. Lộ ra thì người khác ký được bản cài mạo danh, Android coi đó là bản cập nhật hợp lệ |
+| `bb-sos/android/key.properties` | Mật khẩu của khoá ký trên |
+
+Chép `bb-core/.env.example` thành `.env` rồi điền. Máy chủ **từ chối khởi động**
+nếu `JWT_SECRET` còn giá trị mặc định — sinh khoá thật bằng:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+> **Tài khoản dữ liệu mẫu** (`admin` / `bloodblink@2026`, `choray` / `choray@2026`)
+> nằm ngay trong `app/models/seed.py`. Chấp nhận được với dữ liệu mô phỏng, nhưng
+> phải đổi trước khi chạy thật hoặc trước khi mở kho ra công khai.
+
+## ⚠️ Hạng mục còn thiếu
+
+Ghi ở đây thay vì để người đọc tự phát hiện:
+
+- **Đăng nhập bằng OTP là mô phỏng.** Chưa nối cổng SMS; nhập số nào cũng được và
+  mã tự điền `123456`. App tự khai điều này trên màn hình thay vì giấu.
+- **Định tuyến không có dữ liệu giao thông thời gian thực.** `StraightLineRouting`
+  (haversine) luôn khả dụng; `OSRMRouting` cần dựng OSRM từ OSM Vietnam extract.
+- **Đẩy thông báo chưa có Firebase.** Kênh `store` (app hỏi hộp thư mỗi 45 giây)
+  chạy được ngay; kênh `fcm` đã viết xong nhưng dự án chưa có dự án Firebase.
+- **Bảng `facility` không chạy trên SQLite** (`geoalchemy2.Geometry` + `JSONB`),
+  nên test đụng cơ sở y tế phải chạy trên Postgres.
 
 ## 📄 Giấy phép
 
