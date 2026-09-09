@@ -7,12 +7,21 @@ alembic==1.14.1
 pydantic==2.10.4
 pydantic-settings==2.7.1
 geoalchemy2==0.16.0
-shapely==2.0.6
+shapely>=2.1.2
 # timescaledb ĐÃ BỎ. Gói Python này chưa từng được import ở đâu — TimescaleDB
 # là một EXTENSION của Postgres, không phải thư viện Python. Và bản 0.1.1 đã bị
 # gỡ khỏi PyPI, nên để nguyên là `pip install -r` hỏng ngay từ máy sạch: cả tệp
 # không cài được gì, kể cả fastapi. `seed_db` vốn đã bỏ qua nếu thiếu extension.
 httpx==0.28.1
-numpy==2.2.1
+# numpy va shapely: dung >= chu KHONG ghim cung.
+#
+# Ban ghim cu (numpy 2.2.1, shapely 2.0.6) ra doi truoc Python 3.14 nen khong co
+# wheel cp314. Tren may sach, pip se co bien dich tu ma nguon — can trinh bien
+# dich C, va tren may khong co Visual Studio Build Tools thi hong hoan toan.
+# Laptop chay duoc chi vi da cai tu truoc, khong ai nhan ra.
+#
+# Hai goi nay chi dung cho seed va tinh toan hinh hoc, khong phu thuoc API rieng
+# cua ban cu, nen de >= la an toan va lam kho cai duoc tren may moi.
+numpy>=2.3.2
 faker==33.0.0
 h3==4.1.0
