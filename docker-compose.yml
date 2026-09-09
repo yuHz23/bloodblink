@@ -1,0 +1,21 @@
+version: "3.9"
+services:
+  db:
+    image: timescale/timescaledb-ha:pg16
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: bloodblink
+      POSTGRES_USER: bloodblink
+      POSTGRES_PASSWORD: bloodblink
+    volumes:
+      - pgdata:/home/postgres/pgdata
+      - ./bb-core/migrations/extensions.sql:/docker-entrypoint-initdb.d/01-extensions.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bloodblink"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

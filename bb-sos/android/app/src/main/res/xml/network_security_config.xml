@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  bb-core tạm chạy HTTP trên laptop trong tailnet Tailscale, chưa có chứng chỉ TLS.
+  Android 9+ chặn HTTP thường, nên mở cleartext ĐÚNG cho các đích đó thay vì
+  bật android:usesCleartextTraffic="true" cho toàn ứng dụng.
+  P3 dựng HTTPS xong thì xoá tệp này và thuộc tính networkSecurityConfig.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- MagicDNS của laptop chạy bb-core -->
+        <domain includeSubdomains="true">laptop-rrqk96mj.tail85e1ba.ts.net</domain>
+        <!-- Địa chỉ CGNAT 100.64.0.0/10 của Tailscale -->
+        <domain includeSubdomains="false">100.101.73.36</domain>
+        <!-- Máy ảo Android → localhost của máy phát triển -->
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

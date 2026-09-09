@@ -1,0 +1,3 @@
+-- Extensions required for BLOODBLINK
+CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS timescaledb;

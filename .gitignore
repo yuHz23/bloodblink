@@ -1,0 +1,67 @@
+# ── BÍ MẬT — không bao giờ đưa lên kho ──────────────────────────
+#
+# Ba thứ dưới đây lộ ra là hỏng thật, không phải phiền:
+#   .env                     — JWT_SECRET và mật khẩu CSDL. Lộ khoá ký token
+#                              nghĩa là ai cũng tự tạo được token của bất kỳ ai.
+#   *.jks / key.properties   — khoá ký APK và mật khẩu của nó. Lộ ra thì người
+#                              khác ký được bản cài mạo danh chính ứng dụng này,
+#                              và Android sẽ coi đó là bản cập nhật hợp lệ.
+#
+# Đã lỡ commit rồi thì XOÁ KHỎI LỊCH SỬ chứ không chỉ xoá ở lần commit sau —
+# và đổi luôn khoá, vì coi như nó đã lộ.
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+*.p12
+key.properties
+*.pem
+*.key
+
+# ── Phụ thuộc và sản phẩm build ─────────────────────────────────
+node_modules/
+dist/
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+# Sinh lại lúc build, và chứa đường dẫn tuyệt đối trên máy cá nhân.
+ephemeral/
+.gradle/
+local.properties
+Pods/
+*.apk
+*.aab
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# ── Nhật ký chạy và tệp tạm ─────────────────────────────────────
+server-*.log
+*.log
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# ── Máy cá nhân ─────────────────────────────────────────────────
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# ── Dữ liệu mô phỏng sinh ra được ───────────────────────────────
+# Giữ mã sinh, bỏ kết quả: chạy lại `bb-sim/simulation.py` là có, mà tệp thì to.
+bb-sim/simulation_results_*.json
+
+# ── Thư viện do trình quản lý gói tải về ────────────────────────
+# `pio pkg install` / `flutter pub get` lấy lại được; đưa vào kho chỉ làm
+# lịch sử phình ra và lẫn mã của người khác vào diff của mình.
+.pio/
+bb-box/.pio/
+
+# Sinh lúc build và chứa đường dẫn tuyệt đối trên máy cá nhân.
+bb-sos/ios/Flutter/Generated.xcconfig
+bb-sos/ios/Flutter/flutter_export_environment.sh

@@ -1,0 +1,72 @@
+name: bb_sos
+description: BLOODBLINK SOS — Donor escalation mobile app (4-ring, H3 geocell, offline-first)
+
+publish_to: 'none'
+
+version: 1.4.1+8
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  flutter_riverpod: ^2.5.0
+  riverpod_annotation: ^2.3.0
+
+  # Networking
+  dio: ^5.4.0
+
+  # Local storage / offline-first
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  shared_preferences: ^2.2.0
+
+  # Geolocation & H3
+  geolocator: ^11.0.0
+  h3_flutter: ^0.7.0
+
+  # Push notifications
+  firebase_core: ^2.24.0
+  firebase_messaging: ^14.7.0
+  flutter_local_notifications: ^17.0.0
+
+  # UI
+  flutter_animate: ^4.3.0
+  google_fonts: ^6.1.0
+  percent_indicator: ^4.2.3
+  lottie: ^3.0.0
+
+  # Utilities
+  intl: ^0.19.0
+  url_launcher: ^6.2.0
+  permission_handler: ^11.3.0
+  connectivity_plus: ^6.0.0
+
+  # Đọc phiên bản THẬT của bản cài lúc chạy. Trước đây màn Cài đặt cắm cứng
+  # chuỗi "v0.8.0" và nó trôi mất 6 phiên bản mà không ai thấy — đúng loại lỗi
+  # mà hội đồng nhìn thấy đầu tiên.
+  package_info_plus: ^8.0.0
+  uuid: ^4.3.0
+  firebase_crashlytics: ^3.5.7
+  firebase_analytics: ^10.10.7
+  firebase_remote_config: ^4.4.7
+  firebase_performance: ^0.9.4+7
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  build_runner: ^2.4.0
+  riverpod_generator: ^2.3.0
+  flutter_native_splash: ^2.4.8
+  flutter_launcher_icons: ^0.14.4
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/lottie/
+    - assets/images/

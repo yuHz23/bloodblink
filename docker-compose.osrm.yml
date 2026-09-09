@@ -1,0 +1,48 @@
+# ── OSRM Vietnam — Self-hosted routing for BLOODBLINK ─────────────
+#
+# Setup steps (run once):
+#
+#   1. Download Vietnam OSM extract (~400 MB):
+#      docker run --rm -v "${PWD}/osrm-data:/data" osrm/osrm-backend:v5.27.1 \
+#          osrm-extract -p /opt/car.lua /data/vietnam-latest.osm.pbf
+#
+#      (Get the PBF from https://download.geofabrik.de/asia/vietnam.html)
+#
+#   2. Partition and customize:
+#      docker run --rm -v "${PWD}/osrm-data:/data" osrm/osrm-backend:v5.27.1 \
+#          osrm-partition /data/vietnam-latest.osrm
+#
+#      docker run --rm -v "${PWD}/osrm-data:/data" osrm/osrm-backend:v5.27.1 \
+#          osrm-customize /data/vietnam-latest.osrm
+#
+#   3. Start the routing service:
+#      docker compose -f docker-compose.osrm.yml up -d
+#
+#   4. Test:
+#      curl "http://localhost:5000/route/v1/driving/106.6854,10.7869;106.6690,10.7635?overview=simplified"
+#
+#   5. Switch BB-Core to OSRM:
+#      POST http://localhost:8000/api/routing/set-provider?provider=osrm&osrm_url=http://localhost:5000
+#
+# Notes:
+#   - OSRM processes the OSM extract offline — no network needed for routing
+#   - No real-time traffic data — must state this in demo
+#   - Vietnam PBF is ~400 MB, processed files ~1 GB total
+#   - Memory requirement: ~4 GB RAM for osrm-routed
+#
+version: "3.8"
+
+services:
+  osrm:
+    image: osrm/osrm-backend:v5.27.1
+    container_name: bb-osrm
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./osrm-data:/data
+    command: osrm-routed --algorithm mld /data/vietnam-latest.osrm
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G

@@ -1,0 +1,442 @@
+/* BB-Console — Global styles
+ *
+ * Hệ màu dùng TOKEN NGỮ NGHĨA (--surface, --border, --text…) thay vì bảng xám
+ * lật ngược. Bản trước lật --bb-gray-900 từ #111 thành #eee ở chế độ tối, mà
+ * .sidebar lại dùng chính biến đó làm nền với chữ #fff — nên sidebar trở thành
+ * trắng trên trắng. Token riêng cho từng vai trò thì không gặp lại chuyện đó.
+ *
+ * Ba trạng thái chủ đề: "sáng" và "tối" do người dùng chọn (đóng dấu
+ * data-theme trên <html>), và mặc định "theo hệ thống" (không có data-theme,
+ * chỉ prefers-color-scheme quyết định).
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  /* Màu thương hiệu — giữ nguyên ở cả hai chủ đề */
+  --bb-red: #a4243b;
+  --bb-red-strong: #8b1e31;
+  --bb-amber: #b45309;
+  --bb-green: #047857;
+  --bb-blue: #1d4ed8;
+  --bb-purple: #6d28d9;
+
+  /* Nền của badge — nhạt ở chủ đề sáng */
+  --bb-red-soft: #fdf0f2;
+  --bb-amber-soft: #fffbeb;
+  --bb-green-soft: #ecfdf5;
+  --bb-blue-soft: #eff6ff;
+
+  /* Bề mặt và chữ */
+  --bg: #f4f5f7;
+  --bg-accent: #eef0f4;
+  --surface: #ffffff;
+  --surface-2: #f9fafb;
+  --surface-hover: #f3f4f6;
+  --border: #e3e6ea;
+  --border-strong: #d1d5db;
+  --text: #111827;
+  --text-muted: #5b6472;
+  --text-faint: #8b93a1;
+
+  /* Thanh bên luôn tối ở cả hai chủ đề — đây là mỏ neo thị giác của trang */
+  --sidebar-bg: #14181f;
+  --sidebar-bg-2: #1b212b;
+  --sidebar-text: #e8eaee;
+  --sidebar-text-muted: #939aa8;
+
+  --shadow-sm: 0 1px 2px rgba(16, 20, 28, 0.05);
+  --shadow: 0 1px 3px rgba(16, 20, 28, 0.07), 0 6px 16px -8px rgba(16, 20, 28, 0.12);
+  --shadow-lg: 0 2px 6px rgba(16, 20, 28, 0.08), 0 16px 40px -16px rgba(16, 20, 28, 0.22);
+
+  --radius: 12px;
+  --radius-sm: 8px;
+
+  --font-sans: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* Bảng xám cũ — các trang còn dùng trực tiếp, giữ để không phải sửa đồng loạt */
+  --bb-gray-50: var(--surface-2);
+  --bb-gray-100: var(--surface-hover);
+  --bb-gray-200: var(--border);
+  --bb-gray-300: var(--border-strong);
+  --bb-gray-400: var(--text-faint);
+  --bb-gray-500: var(--text-muted);
+  --bb-gray-600: var(--text-muted);
+  --bb-gray-700: var(--text);
+  --bb-gray-800: var(--text);
+  --bb-gray-900: var(--text);
+
+  color-scheme: light;
+}
+
+/* Chủ đề tối — theo hệ thống, trừ khi người dùng chọn sáng */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bb-red: #e8657f;
+    --bb-red-strong: #f0839a;
+    --bb-amber: #f0a742;
+    --bb-green: #34d399;
+    --bb-blue: #7ea6ff;
+    --bb-purple: #b191f5;
+
+    --bb-red-soft: #3a1c24;
+    --bb-amber-soft: #362a15;
+    --bb-green-soft: #12312a;
+    --bb-blue-soft: #1a2740;
+
+    --bg: #0e1116;
+    --bg-accent: #141922;
+    --surface: #171c25;
+    --surface-2: #1d232e;
+    --surface-hover: #232b38;
+    --border: #2a323f;
+    --border-strong: #3a4453;
+    --text: #e9ecf1;
+    --text-muted: #a4adbd;
+    --text-faint: #737d8d;
+
+    --sidebar-bg: #0a0d12;
+    --sidebar-bg-2: #11151d;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 6px 16px -8px rgba(0, 0, 0, 0.6);
+    --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.5), 0 16px 40px -16px rgba(0, 0, 0, 0.7);
+
+    color-scheme: dark;
+  }
+}
+
+/* Người dùng chọn tối — thắng cả prefers-color-scheme */
+:root[data-theme="dark"] {
+  --bb-red: #e8657f;
+  --bb-red-strong: #f0839a;
+  --bb-amber: #f0a742;
+  --bb-green: #34d399;
+  --bb-blue: #7ea6ff;
+  --bb-purple: #b191f5;
+
+  --bb-red-soft: #3a1c24;
+  --bb-amber-soft: #362a15;
+  --bb-green-soft: #12312a;
+  --bb-blue-soft: #1a2740;
+
+  --bg: #0e1116;
+  --bg-accent: #141922;
+  --surface: #171c25;
+  --surface-2: #1d232e;
+  --surface-hover: #232b38;
+  --border: #2a323f;
+  --border-strong: #3a4453;
+  --text: #e9ecf1;
+  --text-muted: #a4adbd;
+  --text-faint: #737d8d;
+
+  --sidebar-bg: #0a0d12;
+  --sidebar-bg-2: #11151d;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 6px 16px -8px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.5), 0 16px 40px -16px rgba(0, 0, 0, 0.7);
+
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 15px; }
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  background-image:
+    radial-gradient(1100px 500px at 12% -8%, var(--bg-accent), transparent 70%),
+    radial-gradient(900px 420px at 100% 0%, var(--bb-red-soft), transparent 65%);
+  background-attachment: fixed;
+  color: var(--text);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'cv11', 'ss01';
+}
+
+code, pre, .mono { font-family: var(--font-mono); font-size: 0.92em; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 6px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-faint); background-clip: content-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ── Layout ─────────────────────────────────────────────────── */
+
+.app { display: flex; min-height: 100vh; }
+
+.sidebar {
+  width: 232px; flex-shrink: 0;
+  background: linear-gradient(180deg, var(--sidebar-bg-2), var(--sidebar-bg));
+  color: var(--sidebar-text);
+  padding: 22px 0 0;
+  display: flex; flex-direction: column;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  position: sticky; top: 0; height: 100vh;
+}
+.sidebar .logo {
+  padding: 0 20px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 10px;
+}
+.sidebar .logo h1 {
+  font-size: 19px; font-weight: 800; letter-spacing: -0.025em; color: #fff;
+}
+.sidebar .logo span {
+  font-size: 10px; color: var(--sidebar-text-muted);
+  text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;
+}
+.sidebar nav { flex: 1; padding: 4px 10px; display: flex; flex-direction: column; gap: 2px; }
+.sidebar nav a {
+  display: flex; align-items: center; gap: 11px;
+  padding: 9px 12px; border-radius: var(--radius-sm);
+  color: var(--sidebar-text-muted); text-decoration: none;
+  font-size: 13.5px; font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+}
+.sidebar nav a:hover { background: rgba(255, 255, 255, 0.07); color: #fff; }
+.sidebar nav a.active {
+  color: #fff;
+  background: linear-gradient(90deg, rgba(164, 36, 59, 0.55), rgba(164, 36, 59, 0.16));
+  box-shadow: inset 2px 0 0 var(--bb-red);
+}
+.sidebar nav a svg { width: 18px; height: 18px; flex-shrink: 0; }
+
+.main { flex: 1; padding: 30px 34px 48px; overflow-y: auto; max-height: 100vh; }
+.main h2 { font-size: 23px; font-weight: 750; letter-spacing: -0.02em; margin-bottom: 4px; }
+.main h3 { font-size: 15.5px; font-weight: 650; letter-spacing: -0.01em; }
+.main h4 { font-size: 13.5px; font-weight: 650; }
+.main .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 22px; }
+
+/* ── Cards ──────────────────────────────────────────────────── */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+
+/* ── Stat cards ─────────────────────────────────────────────── */
+
+.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 22px; }
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  padding: 15px 17px;
+}
+.stat-card .stat-number {
+  font-size: 29px; font-weight: 750; line-height: 1.1;
+  letter-spacing: -0.03em; font-variant-numeric: tabular-nums;
+}
+.stat-card .stat-label {
+  font-size: 11.5px; color: var(--text-muted); margin-top: 3px; font-weight: 500;
+}
+
+/* ── Table ──────────────────────────────────────────────────── */
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th {
+  text-align: left; padding: 10px 14px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  font-size: 10.5px; letter-spacing: 0.07em; text-transform: uppercase;
+  color: var(--text-muted); font-weight: 650;
+  position: sticky; top: 0; z-index: 1;
+}
+td {
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+  vertical-align: middle; font-variant-numeric: tabular-nums;
+}
+tbody tr { transition: background 0.12s; }
+tbody tr:hover { background: var(--surface-2); }
+tr:last-child td { border-bottom: none; }
+
+/* ── Badges ─────────────────────────────────────────────────── */
+
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 9px; border-radius: 999px;
+  font-size: 11px; font-weight: 650; letter-spacing: 0.01em; white-space: nowrap;
+}
+.badge-expired { background: var(--bb-red-soft); color: var(--bb-red); }
+.badge-critical { background: var(--bb-red-soft); color: var(--bb-red); }
+.badge-warning { background: var(--bb-amber-soft); color: var(--bb-amber); }
+.badge-normal { background: var(--bb-green-soft); color: var(--bb-green); }
+.badge-routine { background: var(--bb-blue-soft); color: var(--bb-blue); }
+.badge-urgent { background: var(--bb-amber-soft); color: var(--bb-amber); }
+.badge-emergency { background: var(--bb-red-soft); color: var(--bb-red); }
+
+/* ── Buttons ────────────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 15px; border-radius: var(--radius-sm);
+  font-family: inherit; font-size: 13.5px; font-weight: 600;
+  border: 1px solid transparent; cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.06s, box-shadow 0.15s;
+}
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn:focus-visible { outline: 2px solid var(--bb-blue); outline-offset: 2px; }
+
+.btn-primary { background: var(--bb-red); color: #fff; box-shadow: var(--shadow-sm); }
+.btn-primary:hover:not(:disabled) { background: var(--bb-red-strong); }
+
+.btn-secondary {
+  background: var(--surface); color: var(--text); border-color: var(--border-strong);
+}
+.btn-secondary:hover:not(:disabled) { background: var(--surface-hover); }
+
+.btn-danger { background: #c62828; color: #fff; box-shadow: var(--shadow-sm); }
+.btn-danger:hover:not(:disabled) { background: #ad1f1f; }
+
+/* ── Form ───────────────────────────────────────────────────── */
+
+.form-group { margin-bottom: 16px; }
+.form-group label {
+  display: block; font-size: 11px; font-weight: 650; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 5px;
+}
+.form-group select, .form-group input {
+  width: 100%; padding: 9px 12px;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  font-family: inherit; font-size: 14px;
+  background: var(--surface); color: var(--text);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.form-group select:hover, .form-group input:hover { border-color: var(--text-faint); }
+.form-group select:focus, .form-group input:focus {
+  outline: none; border-color: var(--bb-blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--bb-blue) 18%, transparent);
+}
+input[type="checkbox"] { accent-color: var(--bb-red); width: 15px; height: 15px; }
+
+/* ── Chọn chủ đề ────────────────────────────────────────────── */
+
+.theme-toggle {
+  display: flex; gap: 3px; padding: 3px;
+  background: rgba(255, 255, 255, 0.07); border-radius: 999px;
+}
+.theme-toggle button {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  padding: 6px 0; border: none; border-radius: 999px;
+  background: transparent; color: var(--sidebar-text-muted);
+  cursor: pointer; transition: background 0.15s, color 0.15s;
+}
+.theme-toggle button:hover { color: #fff; }
+.theme-toggle button.active { background: rgba(255, 255, 255, 0.16); color: #fff; }
+
+/* ── Score bar ──────────────────────────────────────────────── */
+
+.score-bar { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
+.score-bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s ease; }
+
+/* ── Responsive ─────────────────────────────────────────────── */
+
+@media (max-width: 860px) {
+  .app { flex-direction: column; }
+  .sidebar {
+    width: 100%; height: auto; position: static;
+    flex-direction: row; align-items: center; overflow-x: auto; padding: 0 8px;
+  }
+  .sidebar .logo {
+    padding: 12px 14px; border-bottom: none;
+    border-right: 1px solid rgba(255, 255, 255, 0.08); margin-bottom: 0;
+  }
+  .sidebar nav { flex-direction: row; padding: 8px; }
+  .sidebar nav a.active { box-shadow: inset 0 -2px 0 var(--bb-red); }
+  .main { padding: 20px 18px 40px; max-height: none; }
+  .stat-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+
+/* ── Ghim ca đang cần máu trên bản đồ ────────────────────────────
+   Vẽ bằng divIcon thay vì ảnh: đọc được nhóm máu ngay trên ghim, và
+   đổi màu theo chủ đề mà không phải sinh hai bộ ảnh. */
+.sos-pin-dot {
+  width: 34px; height: 34px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: #fff;
+  background: #1d4ed8; border: 2px solid #fff;
+  box-shadow: 0 2px 6px rgba(0,0,0,.35);
+}
+.sos-pin-dot.sos-pin-emergency {
+  background: #dc2626;
+  animation: sos-pulse 1.4s ease-in-out infinite;
+}
+@keyframes sos-pulse {
+  0%, 100% { box-shadow: 0 2px 6px rgba(0,0,0,.35), 0 0 0 0 rgba(220,38,38,.55); }
+  50%      { box-shadow: 0 2px 6px rgba(0,0,0,.35), 0 0 0 11px rgba(220,38,38,0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sos-pin-dot.sos-pin-emergency { animation: none; }
+}
+
+/* Popup của Leaflet theo chủ đề của console, không để nền trắng cứng
+   giữa giao diện tối. */
+.leaflet-popup-content-wrapper, .leaflet-popup-tip {
+  background: var(--surface); color: var(--text);
+}
+.leaflet-popup-content { font-size: 13px; line-height: 1.5; }
+.leaflet-popup-content code { font-size: 11.5px; }
+
+
+/* ── Nền bản đồ ở chế độ tối ─────────────────────────────────────
+   Nguồn nền chỉ có một kiểu sáng, nên đảo màu bằng bộ lọc thay vì đổi nhà
+   cung cấp (các nhà cung cấp có sẵn kiểu tối đều đòi API key).
+   Bộ lọc CHỈ áp lên lớp ảnh nền — chấm bệnh viện, ghim SOS và ô lưới người
+   hiến phải giữ đúng màu, vì màu ở đó mang nghĩa (đỏ = kho cạn). */
+.bb-map-dark .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.7);
+}
+.bb-map .leaflet-container { background: var(--surface); }
+.bb-map-dark .leaflet-control-attribution {
+  background: rgba(0,0,0,.6); color: #cbd2dc;
+}
+.bb-map-dark .leaflet-control-attribution a { color: #9db4ff; }
+
+
+/* ── Khuyến nghị mở SOS trên trang Ghép nguồn ────────────────────
+   Hai mức, hai màu: đỏ = kho không đủ, phải gọi người; hổ phách = kho đủ
+   nhưng rút xong sẽ mỏng, nên gọi để BÙ. Không dùng cùng một màu cho cả hai,
+   vì "phải làm ngay" và "nên làm trong ngày" là hai việc khác nhau. */
+.sos-advice { border-left: 4px solid var(--bb-amber, #b45309); }
+.sos-advice[data-action="required"] { border-left-color: var(--bb-red, #c62828); }
+
+.sos-advice-head {
+  font-weight: 650; font-size: 15px; margin-bottom: 6px;
+  color: var(--bb-amber, #b45309);
+}
+.sos-advice[data-action="required"] .sos-advice-head { color: var(--bb-red, #c62828); }
+
+.sos-advice-why { font-size: 13.5px; color: var(--text-muted); margin: 0 0 12px; }
+
+.sos-advice-warn {
+  font-size: 13px; line-height: 1.55; margin: 0 0 12px;
+  padding: 10px 12px; border-radius: 8px;
+  background: color-mix(in srgb, var(--bb-red, #c62828) 9%, transparent);
+  color: var(--text);
+}
+
+.sos-advice-done { font-size: 13.5px; font-weight: 600; color: var(--bb-green, #15803d); margin: 0; }
