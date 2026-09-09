@@ -275,7 +275,7 @@ export default function Matching() {
                         <th>Nhóm máu</th>
                         <th>Điểm</th>
                         <th>Giải thích</th>
-                        <th>Còn lại</th>
+                        <th>ETA vận chuyển</th>
                         <th>Cơ sở nguồn</th>
                         <th>Thao tác</th>
                       </tr>
@@ -308,7 +308,11 @@ export default function Matching() {
                           </td>
                           <td style={{ fontSize: 12, maxWidth: 280 }}>{r.reason_text}</td>
                           <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
-                            {r.eta_seconds ? `${Math.round(r.eta_seconds / 60)} phút` : '—'}
+                            {/* Math.floor chứ không phải Math.round: máy chủ dựng câu giải
+                                thích bằng phép chia lấy nguyên (eta_seconds // 60). Dùng round
+                                ở đây làm cùng một dòng hiện "3 phút" ở cột này nhưng "~2 phút"
+                                ở cột Giải thích — trông như hai số liệu mâu thuẫn. */}
+                            {r.eta_seconds ? `${Math.floor(r.eta_seconds / 60)} phút` : '—'}
                           </td>
                           <td style={{ fontSize: 12 }}>{r.unit_id.slice(0, 8)}...</td>
                           <td>

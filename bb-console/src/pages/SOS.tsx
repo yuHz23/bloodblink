@@ -99,6 +99,20 @@ export default function SOS() {
     refetchIntervalInBackground: true,
   })
 
+  // Danh sách lời kêu gọi ĐANG MỞ của toàn cụm.
+  //
+  // Trước đây trang này chỉ biết tới sự kiện do chính phiên trình duyệt này mở:
+  // `eventId` nằm trong state, nên tải lại trang là mất dấu. Người trực mở SOS
+  // rồi đóng tab — hoặc đổi ca — thì không còn đường nào quay lại xem ai đã nhận
+  // lời, dù dữ liệu vẫn nằm nguyên trên máy chủ. Endpoint `/sos/events` đã có sẵn
+  // từ trước nhưng chỉ trang Bản đồ dùng.
+  const { data: openEvents } = useQuery({
+    queryKey: ['sos-open-events'],
+    queryFn: () => api.listOpenSosEvents(),
+    refetchInterval: 15000,
+    refetchIntervalInBackground: true,
+  })
+
   const activeRing = event?.ring ?? (eventId ? ring : null)
 
   // Số người ĐÃ GỌI phải đọc từ dữ liệu đang hỏi lại 5 giây/lần, không giữ trong
@@ -171,6 +185,58 @@ export default function SOS() {
           </div>
         )}
       </div>
+
+      {/* Lời kêu gọi đang mở của cả cụm — kể cả do phiên khác mở */}
+      {openEvents && openEvents.length > 0 && (
+        <div className="card">
+          <h3 style={{ marginBottom: 4 }}>Đang mở trong cụm ({openEvents.length})</h3>
+          <p style={{ fontSize: 12.5, color: 'var(--bb-gray-500)', marginTop: 0, marginBottom: 12 }}>
+            Kể cả lời kêu gọi do ca trực trước hoặc cơ sở khác mở. Bấm để theo dõi.
+          </p>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Cần</th>
+                  <th>Mức khẩn</th>
+                  <th>Vòng</th>
+                  <th>Đã nhận lời</th>
+                  <th>Mã sự kiện</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {openEvents.map(ev => (
+                  <tr key={ev.id} style={ev.id === eventId ? { background: 'var(--bb-red-soft, #fef2f2)' } : undefined}>
+                    <td style={{ fontWeight: 600 }}>
+                      {ev.abo ?? '?'}{ev.rh ?? ''} ·{' '}
+                      {(ev.component_code && COMPONENT_LABELS[ev.component_code]) || ev.component_code || '—'}
+                    </td>
+                    <td>
+                      <span className={`badge badge-${ev.urgency === 'emergency' ? 'urgent' : 'routine'}`}>
+                        {(ev.urgency && URGENCY_LABELS[ev.urgency]?.label) || ev.urgency || '—'}
+                      </span>
+                    </td>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>{ev.ring}</td>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>
+                      {ev.accept_count}/{ev.target_count}
+                    </td>
+                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                      {ev.id.slice(0, 8)}…
+                    </td>
+                    <td>
+                      <button className="btn" style={{ fontSize: 12, padding: '4px 12px' }}
+                              onClick={() => { setEventId(ev.id); setRing(ev.ring) }}>
+                        {ev.id === eventId ? 'Đang xem' : 'Theo dõi'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Trạng thái lời kêu gọi đang mở */}
       {eventId && (
@@ -275,12 +341,18 @@ export default function SOS() {
                   </tbody>
                 </table>
               </div>
+              {/* Câu chú thích phải nằm trong MỘT <span>.
+                  Thẻ bọc là flex container, nên nếu để text trần cạnh <strong> thì mỗi
+                  mảnh trở thành một flex item riêng: câu bị xé thành ba cột và dấu chấm
+                  cuối câu văng hẳn ra lề phải. */}
               <p style={{ fontSize: 12, color: 'var(--bb-gray-500)', marginTop: 8,
                           display: 'flex', gap: 6, alignItems: 'flex-start' }}>
                 <ShieldAlert size={14} style={{ flexShrink: 0, marginTop: 2 }} />
-                Số điện thoại do chính người hiến nhập lúc nhận lời — máy chủ không có sẵn số
-                của ai để mà lộ. Chỉ cơ sở phát lời kêu gọi đọc được, và <strong>mỗi lần mở
-                bảng này đều được ghi vào nhật ký ghi vết</strong>.
+                <span>
+                  Số điện thoại do chính người hiến nhập lúc nhận lời — máy chủ không có sẵn số
+                  của ai để mà lộ. Chỉ cơ sở phát lời kêu gọi đọc được, và <strong>mỗi lần mở
+                  bảng này đều được ghi vào nhật ký ghi vết</strong>.
+                </span>
               </p>
             </div>
           )}
