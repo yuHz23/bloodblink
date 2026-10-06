@@ -31,6 +31,7 @@ async function fetchJSON<T>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: {
       'Content-Type': 'application/json',
+      'Bypass-Tunnel-Reminder': 'true',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...opts?.headers,
     },
