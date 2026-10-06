@@ -62,8 +62,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://10.0.2.2:8000",   # Android emulator → host
+        "https://bb-console-ten.vercel.app",  # BB-Console trên Vercel
     ],
-    # Hai nhóm origin được phép:
+    # Ba nhóm origin được phép:
     #
     # 1. localhost / 127.0.0.1 ở BẤT KỲ cổng nào. Trước đây chỗ này ghim cứng
     #    5173; Vite tự nhảy sang 5174 khi 5173 đã bị chiếm, và console báo
@@ -72,10 +73,12 @@ app.add_middleware(
     #    mở trong tailnet nên nới cổng ở localhost không mở rộng bề mặt tấn công.
     # 2. Máy trong tailnet (MagicDNS *.ts.net hoặc IP 100.x) — console mở từ
     #    điện thoại hay máy khác trong nhóm.
+    # 3. Vercel preview/production deployments (*.vercel.app).
     allow_origin_regex=(
         r"^http://(localhost|127\.0\.0\.1)(:\d+)?$"
         r"|^https?://([a-z0-9-]+\.)*ts\.net(:\d+)?$"
         r"|^http://100\.\d+\.\d+\.\d+(:\d+)?$"
+        r"|^https://[a-z0-9-]+\.vercel\.app$"
     ),
     allow_credentials=True,
     allow_methods=["*"],
