@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: bb-core-api
+    env: python
+    buildCommand: "cd bb-core && pip install -r requirements.txt"
+    startCommand: "cd bb-core && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: bb-core-db
+          property: connectionString
+      - key: ALLOW_DEFAULT_JWT_SECRET
+        value: "true"
+      - key: PYTHON_VERSION
+        value: "3.12"
+      - key: PYTHONPATH
+        value: "bb-core"
+
+databases:
+  - name: bb-core-db
+    databaseName: bloodblink
+    user: bloodblink
+    plan: free
+    postgresMajorVersion: 16
