@@ -1,4 +1,4 @@
-# BLOODBLINK — dựng máy chủ tạm trên laptop (P3)
+﻿# BLOODBLINK — dựng máy chủ tạm trên laptop (P3)
 #
 # Kiến trúc:
 #   Postgres 16 + PostGIS  → chạy trong WSL Ubuntu (không có systemd, phải gọi
@@ -17,6 +17,13 @@ param(
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $core = Join-Path $repo 'bb-core'
+$pythonExe = Join-Path $env:LOCALAPPDATA 'Python\pythoncore-3.14-64\python.exe'
+if (-not (Test-Path -LiteralPath $pythonExe)) {
+    $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
+    if (-not $pythonCommand) { throw 'Không tìm thấy Python; cài Python 3.12 trở lên rồi chạy lại.' }
+    $pythonExe = $pythonCommand.Source
+}
+Write-Host "Python: $pythonExe" -ForegroundColor DarkGray
 
 Write-Host '== 1/4 Đánh thức WSL và khởi động Postgres ==' -ForegroundColor Cyan
 # WSL2 tắt máy ảo ngay khi lệnh cuối cùng kết thúc, kéo sập luôn cầu chuyển cổng
@@ -35,14 +42,14 @@ Write-Host '== 2/4 Kiểm tra kết nối từ Windows ==' -ForegroundColor Cyan
 # Phải là 127.0.0.1, KHÔNG dùng localhost: localhost ra ::1 trước mà cầu chuyển
 # cổng của WSL2 chỉ chuyển IPv4 → asyncpg báo WinError 1225 dù Postgres đang chạy.
 Push-Location $core
-python -c "import asyncio,asyncpg; asyncio.run(asyncpg.connect('postgresql://bloodblink:bloodblink@127.0.0.1:5432/bloodblink'))"
+& $pythonExe -c "import asyncio,asyncpg; asyncio.run(asyncpg.connect('postgresql://bloodblink:bloodblink@127.0.0.1:5432/bloodblink'))"
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Windows không gọi được Postgres trong WSL' }
 
 if ($Seed) {
     Write-Host '== 3/4 Nạp lại dữ liệu mẫu (xoá dữ liệu cũ) ==' -ForegroundColor Yellow
     wsl.exe -d Ubuntu -u root -e bash -lc "su postgres -c `"psql -d bloodblink -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' -c 'CREATE EXTENSION IF NOT EXISTS postgis'`""
     $env:PYTHONIOENCODING = 'utf-8'
-    python -m seed.seed_db
+    & $pythonExe -m seed.seed_db
 } else {
     Write-Host '== 3/4 Bỏ qua seed (thêm -Seed nếu muốn nạp lại) ==' -ForegroundColor DarkGray
 }
@@ -55,7 +62,7 @@ Write-Host ''
 
 $env:PYTHONIOENCODING = 'utf-8'
 try {
-    python -m uvicorn app.main:app --host 0.0.0.0 --port $Port
+    & $pythonExe -m uvicorn app.main:app --host 0.0.0.0 --port $Port
 } finally {
     Pop-Location
     if ($keepAlive -and -not $keepAlive.HasExited) { Stop-Process -Id $keepAlive.Id -Force }
