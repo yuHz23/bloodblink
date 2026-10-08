@@ -27,8 +27,19 @@ class _SosActiveScreenState extends State<SosActiveScreen> {
   final _api = ApiService();
   bool _sending = false;
   String? _error;
+  String? _rewardRole;
+  String? _rewardStatus;
+  int? _rewardAmountVnd;
 
   SosInboxItem get call => widget.call;
+
+  @override
+  void initState() {
+    super.initState();
+    _rewardRole = call.rewardRole;
+    _rewardStatus = call.rewardStatus;
+    _rewardAmountVnd = call.rewardAmountVnd;
+  }
 
   String get _componentLabel {
     switch (call.componentCode) {
@@ -123,6 +134,44 @@ class _SosActiveScreenState extends State<SosActiveScreen> {
             ),
           ),
 
+          if (_rewardRole != null) ...[
+            const SizedBox(height: 14),
+            Card(
+              color: context.bb.info.withValues(alpha: 0.08),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(call.title, style: const TextStyle(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 6),
+                    Text(_rewardMessage(), style: TextStyle(fontSize: 13, color: context.bb.body)),
+                    if (_rewardRole == 'backup' && _rewardStatus == 'awaiting_choice') ...[
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: _sending ? null : () => _chooseBackup('continue'),
+                              child: const Text('Tiếp tục dự bị'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: _sending ? null : () => _chooseBackup('decline'),
+                              child: const Text('Xin dừng'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+
           const SizedBox(height: 16),
 
           if (_error != null)
@@ -154,7 +203,7 @@ class _SosActiveScreenState extends State<SosActiveScreen> {
           const SizedBox(height: 12),
 
           // Nút trả lời
-          Row(
+          if (_rewardRole == null) Row(
             children: [
               Expanded(
                 child: ElevatedButton.icon(
@@ -372,6 +421,59 @@ class _SosActiveScreenState extends State<SosActiveScreen> {
               : 'Đã ghi nhận không thể hiến lúc này.'),
         ),
       );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _sending = false;
+        _error = e.message;
+      });
+    }
+  }
+
+  String _rewardMessage() {
+    if (_rewardStatus == 'awaiting_choice') return call.body;
+    if (_rewardStatus == 'awaiting_donation') {
+      final amount = _rewardRole == 'primary' ? '100.000đ' : '80.000đ';
+      return 'Đã ghi nhận bạn trong danh sách ${_rewardRole == 'primary' ? 'người chính' : 'dự bị'}. '
+          'Cơ sở y tế sẽ đánh giá điều kiện hiến và xác nhận kết quả. Phương án quà $amount chỉ là mô phỏng.';
+    }
+    if (_rewardStatus == 'compensation_proposed') {
+      return 'Cảm ơn bạn đã phản hồi. Phương án bù phiền 30.000đ đã được ghi nhận ở chế độ mô phỏng; chưa phát quà thật.';
+    }
+    if (_rewardStatus == 'mock_ready') {
+      return 'Cơ sở đã xác nhận kết quả hiến. Phương án quà ${_rewardAmountVnd ?? 0}đ đã ghi nhận ở chế độ mô phỏng; chưa phát voucher.';
+    }
+    if (_rewardStatus == 'not_completed') {
+      return 'Cơ sở chưa ghi nhận hoàn tất hiến trong đợt SOS này.';
+    }
+    return call.body;
+  }
+
+  Future<void> _chooseBackup(String choice) async {
+    final prefs = await SharedPreferences.getInstance();
+    final donorId = prefs.getString('donor_id');
+    if (donorId == null) {
+      setState(() => _error = 'Chưa có hồ sơ người hiến trên máy này');
+      return;
+    }
+
+    setState(() {
+      _sending = true;
+      _error = null;
+    });
+    try {
+      final result = await _api.chooseSosBackup(
+        eventId: call.eventId,
+        donorId: donorId,
+        choice: choice,
+      );
+      if (!mounted) return;
+      setState(() {
+        _rewardStatus = result['status'] as String?;
+        _rewardAmountVnd = result['proposed_amount_vnd'] as int?;
+        _sending = false;
+      });
+      SosInboxService.instance.markAnswered(call.notificationId);
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {

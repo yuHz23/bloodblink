@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { COMPONENT_SHORT, formatHoursRemaining } from '../lib/constants'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, X } from 'lucide-react'
 
 export default function Dashboard() {
+  const [detailHours, setDetailHours] = useState<number | null>(null)
   // `refetchIntervalInBackground` bật ở mọi truy vấn có nhịp trong console này.
   //
   // React Query mặc định DỪNG `refetchInterval` khi `document.hidden`, mà cửa sổ
@@ -24,6 +26,16 @@ export default function Dashboard() {
     refetchIntervalInBackground: true,
   })
 
+  const {
+    data: detailUnits,
+    isLoading: detailLoading,
+    error: detailError,
+  } = useQuery({
+    queryKey: ['expiring-detail', detailHours],
+    queryFn: () => api.listExpiring(detailHours ?? 24, undefined, undefined, 200),
+    enabled: detailHours !== null,
+  })
+
   if (isLoading || !summary) return <div>Đang tải...</div>
 
   const criticalUnits = (expiring || []).filter(u => u.urgency === 'critical' || u.urgency === 'expired')
@@ -40,18 +52,18 @@ export default function Dashboard() {
           </div>
           <div className="stat-label">Tổng đơn vị khả dụng</div>
         </div>
-        <div className="stat-card">
+        <button className="stat-card stat-card-action" type="button" onClick={() => setDetailHours(72)}>
           <div className="stat-number" style={{ color: 'var(--bb-amber)' }}>
             {summary.expiring_within_72h}
           </div>
           <div className="stat-label">Hết hạn trong 72 giờ</div>
-        </div>
-        <div className="stat-card">
+        </button>
+        <button className="stat-card stat-card-action" type="button" onClick={() => setDetailHours(24)}>
           <div className="stat-number" style={{ color: 'var(--bb-red)' }}>
             {summary.expiring_within_24h}
           </div>
           <div className="stat-label">Hết hạn trong 24 giờ</div>
-        </div>
+        </button>
         <div className="stat-card">
           <div className="stat-number" style={{ color: criticalUnits.length > 0 ? 'var(--bb-red)' : 'var(--bb-green)' }}>
             {criticalUnits.length}
@@ -93,7 +105,7 @@ export default function Dashboard() {
       <div className="card">
         <h3 style={{ marginBottom: 12 }}>Phân bố nhóm máu khả dụng</h3>
         <div className="table-wrap">
-          <table>
+          <table className="blood-type-matrix">
             <thead>
               <tr>
                 <th>Nhóm máu</th>
@@ -149,7 +161,10 @@ export default function Dashboard() {
               <tbody>
                 {criticalUnits.slice(0, 5).map(u => (
                   <tr key={u.unit.id}>
-                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{u.unit.isbt_din}</td>
+                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                      {u.unit.isbt_din.startsWith('MOCK-FEFO-') && <span className="badge badge-routine">Mô phỏng </span>}
+                      {u.unit.isbt_din}
+                    </td>
                     <td><span className={`badge badge-${u.urgency}`}>{u.unit.abo}{u.unit.rh}</span></td>
                     <td>{formatHoursRemaining(u.hours_remaining)}</td>
                     <td style={{ fontSize: 12 }}>{u.unit.held_by_facility_id}</td>
@@ -188,6 +203,53 @@ export default function Dashboard() {
           </table>
         </div>
       </div>
+
+      {detailHours !== null && (
+        <div className="detail-modal-backdrop" role="presentation" onMouseDown={event => {
+          if (event.target === event.currentTarget) setDetailHours(null)
+        }}>
+          <section className="detail-modal" role="dialog" aria-modal="true" aria-labelledby="expiring-title">
+            <div className="detail-modal-head">
+              <div>
+                <h3 id="expiring-title">Đơn vị sắp hết hạn trong {detailHours} giờ</h3>
+                <p>{detailUnits?.length ?? 0} đơn vị · sắp xếp theo hạn dùng gần nhất</p>
+              </div>
+              <button className="btn btn-secondary detail-modal-close" type="button"
+                aria-label="Đóng chi tiết" onClick={() => setDetailHours(null)}>
+                <X size={16} />
+              </button>
+            </div>
+            {detailLoading ? (
+              <div className="detail-modal-empty">Đang tải danh sách…</div>
+            ) : detailError ? (
+              <div className="detail-modal-empty" role="alert">Không tải được danh sách đơn vị sắp hết hạn.</div>
+            ) : detailUnits && detailUnits.length > 0 ? (
+              <div className="table-wrap detail-modal-table">
+                <table>
+                  <thead><tr><th>DIN</th><th>Nhóm máu</th><th>Chế phẩm</th><th>Còn lại</th><th>Cơ sở</th><th>Hạn dùng</th></tr></thead>
+                  <tbody>
+                    {detailUnits.map(({ unit, hours_remaining, urgency }) => (
+                      <tr key={unit.id}>
+                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                          {unit.isbt_din.startsWith('MOCK-FEFO-') && <span className="badge badge-routine">Mô phỏng </span>}
+                          {unit.isbt_din}
+                        </td>
+                        <td><span className={`badge badge-${urgency}`}>{unit.abo}{unit.rh}</span></td>
+                        <td>{COMPONENT_SHORT[unit.component_code] ?? unit.component_code}</td>
+                        <td style={{ fontWeight: 700 }}>{formatHoursRemaining(hours_remaining)}</td>
+                        <td>{unit.held_by_facility_id.replace('fac-', '').replace(/-/g, ' ')}</td>
+                        <td>{new Date(unit.expires_at).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="detail-modal-empty">Không có đơn vị nào trong khoảng thời gian này.</div>
+            )}
+          </section>
+        </div>
+      )}
     </>
   )
 }

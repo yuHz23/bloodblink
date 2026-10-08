@@ -423,6 +423,23 @@ class ApiService {
     }
   }
 
+  /// Ghi nhận lựa chọn tiếp tục hoặc xin dừng của người hiến dự bị SOS.
+  Future<Map<String, dynamic>> chooseSosBackup({
+    required String eventId,
+    required String donorId,
+    required String choice,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/sos/event/$eventId/rewards/$donorId/choice',
+        data: {'choice': choice},
+      );
+      return Map<String, dynamic>.from(response.data as Map);
+    } on DioException catch (e) {
+      throw ApiException(_describe(e, 'Lỗi cập nhật lựa chọn dự bị'), e.response?.statusCode);
+    }
+  }
+
   // ── Routing Endpoints ──────────────────────────────────────────
 
   /// Get ETA between two coordinates
@@ -644,6 +661,9 @@ class SosInboxItem {
 
   final String title;
   final String body;
+  final String? rewardRole;
+  final String? rewardStatus;
+  final int? rewardAmountVnd;
 
   SosInboxItem({
     required this.notificationId,
@@ -663,6 +683,9 @@ class SosInboxItem {
     this.facilityName,
     this.title = '',
     this.body = '',
+    this.rewardRole,
+    this.rewardStatus,
+    this.rewardAmountVnd,
   });
 
   factory SosInboxItem.fromJson(Map<String, dynamic> json) {
@@ -684,6 +707,9 @@ class SosInboxItem {
       facilityName: json['facility_name'],
       title: json['title'] ?? '',
       body: json['body'] ?? '',
+      rewardRole: json['reward_role'],
+      rewardStatus: json['reward_status'],
+      rewardAmountVnd: json['reward_amount_vnd'],
     );
   }
 }

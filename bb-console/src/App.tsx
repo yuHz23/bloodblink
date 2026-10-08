@@ -1,5 +1,5 @@
 import { Routes, Route, NavLink } from 'react-router-dom'
-import { Droplets, Search, AlertTriangle, FileText, BarChart3, Navigation, Map, Users, LogOut, Sun, Moon, Monitor } from 'lucide-react'
+import { Droplets, FileText, BarChart3, Map, LogOut, Sun, Moon, Monitor } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
 import Inventory from './pages/Inventory'
 import Matching from './pages/Matching'
@@ -48,20 +48,8 @@ export default function App() {
           <NavLink to="/inventory" className={({ isActive }) => isActive ? 'active' : ''}>
             <Droplets size={18} /> Tồn kho FEFO
           </NavLink>
-          <NavLink to="/matching" className={({ isActive }) => isActive ? 'active' : ''}>
-            <Search size={18} /> Ghép nguồn
-          </NavLink>
-          <NavLink to="/donors" className={({ isActive }) => isActive ? 'active' : ''}>
-            <Users size={18} /> Tìm người hiến
-          </NavLink>
-          <NavLink to="/sos" className={({ isActive }) => isActive ? 'active' : ''}>
-            <AlertTriangle size={18} /> SOS — Huy động
-          </NavLink>
           <NavLink to="/map" className={({ isActive }) => isActive ? 'active' : ''}>
             <Map size={18} /> Bản đồ
-          </NavLink>
-          <NavLink to="/routing" className={({ isActive }) => isActive ? 'active' : ''}>
-            <Navigation size={18} /> Định tuyến
           </NavLink>
           {/* Nhật ký cho biết cơ sở nào tra ai lúc nào nên backend chỉ cho vai
               trò admin; ẩn mục này với tài khoản cơ sở thay vì để họ bấm vào rồi

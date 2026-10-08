@@ -200,8 +200,22 @@ export interface SosResponder {
   contact_note: string | null;
 }
 
+export interface SosReward {
+  id: string;
+  sos_event_id: string;
+  donor_id: string;
+  role: 'primary' | 'backup';
+  status: 'awaiting_donation' | 'awaiting_choice' | 'compensation_proposed' | 'mock_ready' | 'not_completed';
+  proposed_amount_vnd: number | null;
+  created_at: string;
+  decision_at: string | null;
+  donation_confirmed_at: string | null;
+  donation_confirmed_by: string | null;
+}
+
 export interface SosEvent {
   id: string;
+  request_id?: string | null;
   ring: number;
   opened_at: string;
   target_count: number;
@@ -258,6 +272,43 @@ export interface TransferRequest {
   needed_by: string;
   created_at: string;
   state: string;
+  recipient_sex: string | null;
+  recipient_age: number | null;
+}
+
+export interface TransferOrder {
+  id: string;
+  request_id: string;
+  source_facility_id: string;
+  unit_id: string | null;
+  state: string;
+  approved_by: string;
+  at: string;
+  completed_at: string | null;
+}
+
+export interface TransferOffer {
+  id: string;
+  request_id: string;
+  source_facility_id: string | null;
+  source_facility_name: string;
+  requester_facility_id: string;
+  requester_facility_name: string;
+  component_code: string;
+  abo: string | null;
+  rh: string | null;
+  qty: number;
+  urgency: string;
+  needed_by: string;
+  priority_rank: number;
+  available_qty: number;
+  offered_qty: number;
+  accepted_qty: number;
+  status: 'pending' | 'accepted' | 'declined' | 'expired' | 'cancelled' | 'no_source';
+  created_at: string;
+  expires_at: string;
+  responded_at: string | null;
+  response_note: string | null;
 }
 
 export interface MatchResult {
@@ -298,6 +349,7 @@ export interface RouteEta {
   duration_min: number;
   provider: string;
   routing_mode: string;
+  geometry?: [number, number][] | null;
 }
 
 export interface EtaComparison {
@@ -382,10 +434,11 @@ export const api = {
     return fetchJSON<BloodUnit[]>(`/inventory/${qs}`);
   },
 
-  listExpiring: (withinHours = 48, component?: string, facilityId?: string) => {
+  listExpiring: (withinHours = 48, component?: string, facilityId?: string, limit = 50) => {
     const params = new URLSearchParams({ within_hours: String(withinHours) });
     if (component) params.set('component', component);
     if (facilityId) params.set('facility_id', facilityId);
+    params.set('limit', String(limit));
     return fetchJSON<HoursRemaining[]>(`/inventory/expiring?${params}`);
   },
 
@@ -410,11 +463,35 @@ export const api = {
   findMatches: (requestId: string) =>
     fetchJSON<MatchResponse>(`/matching/find?request_id=${requestId}`, { method: 'POST' }),
 
+  broadcastTransferRequest: (requestId: string, responseWindowMinutes: number) =>
+    fetchJSON<TransferOffer[]>(`/matching/request/${requestId}/broadcast?response_window_minutes=${responseWindowMinutes}`, { method: 'POST' }),
+
+  listTransferOffers: (requestId: string) =>
+    fetchJSON<TransferOffer[]>(`/matching/request/${requestId}/offers`),
+
+  listIncomingTransferOffers: (facilityId?: string) => {
+    const query = facilityId ? `?facility_id=${encodeURIComponent(facilityId)}` : '';
+    return fetchJSON<TransferOffer[]>(`/matching/offers/incoming${query}`);
+  },
+
+  respondToTransferOffer: (offerId: string, accept: boolean, facilityId?: string) => {
+    const query = facilityId ? `?facility_id=${encodeURIComponent(facilityId)}` : '';
+    return fetchJSON<TransferOffer>(`/matching/offers/${offerId}/respond${query}`, {
+      method: 'POST', body: JSON.stringify({ accept }),
+    });
+  },
+
   getTransferRequest: (requestId: string) =>
     fetchJSON<TransferRequest>(`/matching/request/${requestId}`),
 
+  listTransferOrders: (requestId: string) =>
+    fetchJSON<TransferOrder[]>(`/matching/request/${requestId}/orders`),
+
   approveTransfer: (requestId: string, approvedBy: string) =>
     fetchJSON<TransferRequest>(`/matching/request/${requestId}/approve?approved_by=${encodeURIComponent(approvedBy)}`, { method: 'POST' }),
+
+  completeTransferOrder: (orderId: string, receivedBy = 'console-user') =>
+    fetchJSON<TransferOrder>(`/matching/order/${orderId}/complete?received_by=${encodeURIComponent(receivedBy)}`, { method: 'POST' }),
 
   // SOS
   findNearbyDonors: (opts: {
@@ -434,7 +511,7 @@ export const api = {
 
   createSosEvent: (data: {
     facility_id?: string; component_code: string; abo?: string; rh?: string;
-    urgency?: string; qty?: number; ring?: number; h3_cell?: string;
+    urgency?: string; qty?: number; ring?: number; h3_cell?: string; request_id?: string;
   }) => fetchJSON<SosEvent>('/sos/event', {
     method: 'POST',
     body: JSON.stringify(data),
@@ -453,6 +530,24 @@ export const api = {
   /** Mỗi lần gọi để lại một dòng trong nhật ký ghi vết. */
   listSosResponders: (eventId: string) =>
     fetchJSON<SosResponder[]>(`/sos/event/${eventId}/responses`),
+
+  listSosRewards: (eventId: string) =>
+    fetchJSON<SosReward[]>(`/sos/event/${eventId}/rewards`),
+
+  selectSosRewardRecipients: (eventId: string, primaryDonorId: string) =>
+    fetchJSON<SosReward[]>(`/sos/event/${eventId}/rewards/select`, {
+      method: 'POST', body: JSON.stringify({ primary_donor_id: primaryDonorId }),
+    }),
+
+  chooseSosBackup: (eventId: string, donorId: string, choice: 'continue' | 'decline') =>
+    fetchJSON<SosReward>(`/sos/event/${eventId}/rewards/${donorId}/choice`, {
+      method: 'POST', body: JSON.stringify({ choice }),
+    }),
+
+  confirmSosDonation: (eventId: string, donorId: string, donated = true) =>
+    fetchJSON<SosReward>(`/sos/event/${eventId}/rewards/${donorId}/donation`, {
+      method: 'POST', body: JSON.stringify({ donated }),
+    }),
 
   /// Tồn kho theo CƠ SỞ × NHÓM MÁU — dữ liệu tô bản đồ. Chỉ đếm đơn vị còn hạn.
   inventoryByFacility: (componentCode?: string) =>

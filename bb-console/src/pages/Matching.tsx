@@ -1,17 +1,19 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import { api } from '../lib/api'
 import { URGENCY_LABELS, urgencyBadge } from '../lib/constants'
 import { Search, AlertTriangle } from 'lucide-react'
 
 export default function Matching() {
   const qc = useQueryClient()
+  const [searchParams] = useSearchParams()
   const [step, setStep] = useState<'request' | 'results'>('request')
   const [requestId, setRequestId] = useState<string | null>(null)
 
   // Form state
-  const [formData, setFormData] = useState({
-    requester_facility_id: 'fac-bv-tmhh',
+  const [formData, setFormData] = useState(() => ({
+    requester_facility_id: searchParams.get('requester_facility_id') || 'fac-bv-tmhh',
     component_code: 'PLT',
     abo: '',
     rh: '',
@@ -20,7 +22,7 @@ export default function Matching() {
     needed_by: new Date(Date.now() + 6 * 3600000).toISOString().slice(0, 16),
     recipient_sex: '',
     recipient_age: '',
-  })
+  }))
 
   // Create request mutation
   const createRequest = useMutation({
@@ -51,6 +53,12 @@ export default function Matching() {
     enabled: !!requestId && step === 'results',
   })
 
+  const { data: transferOrders, isLoading: ordersLoading } = useQuery({
+    queryKey: ['transfer-orders', requestId],
+    queryFn: () => api.listTransferOrders(requestId!),
+    enabled: !!requestId && step === 'results',
+  })
+
   // Mở lời kêu gọi ngay từ màn kết quả ghép nguồn.
   //
   // Trước đây nhân viên tìm nguồn xong, thấy thiếu, rồi phải TỰ NHỚ sang mục SOS
@@ -75,12 +83,30 @@ export default function Matching() {
   const approveRequest = useMutation({
     mutationFn: ({ reqId, approvedBy }: { reqId: string; approvedBy: string }) =>
       api.approveTransfer(reqId, approvedBy),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['match-results'] })
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['match-results'] }),
+        qc.invalidateQueries({ queryKey: ['transfer-orders', requestId] }),
+        qc.invalidateQueries({ queryKey: ['inventory-summary'] }),
+      ])
+    },
+  })
+
+  const completeOrder = useMutation({
+    mutationFn: (orderId: string) => api.completeTransferOrder(orderId),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['transfer-orders', requestId] }),
+        qc.invalidateQueries({ queryKey: ['inventory-summary'] }),
+        qc.invalidateQueries({ queryKey: ['stock-by-facility'] }),
+        qc.invalidateQueries({ queryKey: ['match-results'] }),
+      ])
     },
   })
 
   const uBadge = urgencyBadge(formData.urgency)
+  const age = formData.recipient_age ? Number(formData.recipient_age) : null
+  const rhSensitive = formData.recipient_sex === 'F' && (age === null || (age >= 18 && age <= 45))
 
   return (
     <>
@@ -174,10 +200,10 @@ export default function Matching() {
             {createRequest.isPending ? 'Đang tìm...' : 'Tìm nguồn tương hợp'}
           </button>
 
-          {formData.recipient_sex === 'F' && Number(formData.recipient_age) >= 18 && Number(formData.recipient_age) <= 45 && formData.rh === '-' && (
+          {rhSensitive && (formData.rh === '-' || !formData.rh) && (
             <div style={{ marginTop: 12, padding: '10px 14px', background: 'var(--bb-red-soft)', borderRadius: 6, fontSize: 13 }}>
               <AlertTriangle size={14} style={{ verticalAlign: -2, color: 'var(--bb-red)' }} />
-              {' '}<strong>Ràng buộc chuyên môn:</strong> Không hạ chuẩn RhD cho phụ nữ tuổi sinh đẻ (18–45) — rủi ro bệnh tan máu ở thai nhi.
+              {' '}<strong>Ràng buộc chuyên môn:</strong> Không hạ chuẩn RhD cho phụ nữ tuổi sinh đẻ (18–45). Khi RhD chưa rõ, hệ thống xử lý bảo thủ như RhD âm và không ghép hồng cầu RhD dương.
             </div>
           )}
         </div>
@@ -318,8 +344,9 @@ export default function Matching() {
                           <td>
                             {i === 0 && (
                               <button className="btn btn-primary" style={{ fontSize: 12, padding: '4px 12px' }}
+                                disabled={approveRequest.isPending || ordersLoading || (transferOrders?.length ?? 0) >= formData.qty}
                                 onClick={() => approveRequest.mutate({ reqId: matchResults.request_id, approvedBy: 'console-user' })}>
-                                Đề xuất
+                                {approveRequest.isPending ? 'Đang đề xuất…' : (transferOrders?.length ?? 0) > 0 ? 'Đề xuất phần còn thiếu' : 'Đề xuất'}
                               </button>
                             )}
                           </td>
@@ -328,6 +355,50 @@ export default function Matching() {
                     </tbody>
                   </table>
                 </div>
+              </div>
+
+              {(approveRequest.isError || completeOrder.isError) && (
+                <div className="card" role="alert" style={{ borderLeft: '3px solid var(--bb-red)', color: 'var(--bb-red)' }}>
+                  {(approveRequest.error ?? completeOrder.error)?.message || 'Không thể cập nhật lệnh điều chuyển.'}
+                </div>
+              )}
+
+              <div className="card">
+                <h3 style={{ marginTop: 0 }}>Ghi nhận bàn giao</h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+                  Chỉ xác nhận sau khi đơn vị máu đã được giao và tiếp nhận. Hệ thống ghi đóng góp lúc này để ưu tiên hỗ trợ qua lại ở lần ghép nguồn sau.
+                </p>
+                {ordersLoading ? (
+                  <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>Đang tải lệnh điều chuyển…</div>
+                ) : transferOrders && transferOrders.length > 0 ? (
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>Cơ sở hỗ trợ</th><th>Mã đơn vị</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+                      <tbody>
+                        {transferOrders.map(order => (
+                          <tr key={order.id}>
+                            <td>{facilities?.find(f => f.id === order.source_facility_id)?.name ?? order.source_facility_id}</td>
+                            <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{order.unit_id?.slice(0, 12) ?? '—'}</td>
+                            <td>{order.state === 'delivered' ? 'Đã bàn giao' : order.state === 'in_transit' ? 'Đang vận chuyển' : 'Đã đề xuất'}</td>
+                            <td>
+                              {order.state === 'delivered' ? (
+                                <span className="badge badge-normal">Đã ghi nhận đóng góp</span>
+                              ) : (
+                                <button className="btn btn-secondary" style={{ fontSize: 12, padding: '5px 10px' }}
+                                  disabled={completeOrder.isPending}
+                                  onClick={() => completeOrder.mutate(order.id)}>
+                                  {completeOrder.isPending ? 'Đang ghi nhận…' : 'Xác nhận đã bàn giao'}
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>Chưa có lệnh được đề xuất. Chọn một nguồn tương hợp để tạo lệnh.</div>
+                )}
               </div>
 
               {/* Blocked units */}

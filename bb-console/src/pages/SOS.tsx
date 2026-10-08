@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Siren, Clock, Users, ArrowUpRight, CheckCircle2, Phone, ShieldAlert } from 'lucide-react'
-import { api, type SosNotification, type SosResponder } from '../lib/api'
+import { api, type SosNotification, type SosResponder, type SosReward } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { URGENCY_LABELS, COMPONENT_LABELS } from '../lib/constants'
 
@@ -25,6 +25,7 @@ const RINGS = [
 
 export default function SOS() {
   const { session } = useAuth()
+  const queryClient = useQueryClient()
 
   const [abo, setAbo] = useState('O')
   const [rh, setRh] = useState('+')
@@ -34,6 +35,7 @@ export default function SOS() {
   const [ring, setRing] = useState(0)
   const [eventId, setEventId] = useState<string | null>(null)
   const [lastMessage, setLastMessage] = useState<string | null>(null)
+  const [primaryDonorId, setPrimaryDonorId] = useState('')
 
   const { data: facilities } = useQuery({
     queryKey: ['facilities'],
@@ -97,6 +99,29 @@ export default function SOS() {
     enabled: !!eventId,
     refetchInterval: 5000,
     refetchIntervalInBackground: true,
+  })
+
+  const { data: rewards } = useQuery({
+    queryKey: ['sos-rewards', eventId],
+    queryFn: () => api.listSosRewards(eventId!),
+    enabled: !!eventId,
+    refetchInterval: 5000,
+    refetchIntervalInBackground: true,
+  })
+
+  const refreshRewards = () => queryClient.invalidateQueries({ queryKey: ['sos-rewards', eventId] })
+  const selectRewardRecipients = useMutation({
+    mutationFn: (primaryDonorId: string) => api.selectSosRewardRecipients(eventId!, primaryDonorId),
+    onSuccess: refreshRewards,
+  })
+  const chooseBackup = useMutation({
+    mutationFn: (args: { donorId: string; choice: 'continue' | 'decline' }) =>
+      api.chooseSosBackup(eventId!, args.donorId, args.choice),
+    onSuccess: refreshRewards,
+  })
+  const confirmDonation = useMutation({
+    mutationFn: (donorId: string) => api.confirmSosDonation(eventId!, donorId),
+    onSuccess: refreshRewards,
   })
 
   // Danh sách lời kêu gọi ĐANG MỞ của toàn cụm.
@@ -358,6 +383,103 @@ export default function SOS() {
           )}
 
           {/* Nhật ký ghi vết: ai đã được gọi, vòng nào */}
+          {eventId && (
+            <section style={{ marginTop: 20, borderTop: '1px solid var(--bb-gray-200)', paddingTop: 16 }}>
+              <h4 style={{ marginBottom: 6 }}>Phương án cảm ơn người hiến — mô phỏng</h4>
+              <p style={{ fontSize: 12, color: 'var(--bb-gray-600)', lineHeight: 1.6, marginTop: 0 }}>
+                Khi đủ 6 người nhận lời, chọn 1 người chính (đề xuất 100.000đ sau khi cơ sở xác nhận hiến).
+                Những người còn lại có thể tiếp tục làm dự bị (80.000đ sau xác nhận hiến) hoặc xin dừng
+                (đề xuất 30.000đ). Lời nhắn xuất hiện trong hộp thư BB-SOS; voucher thật chưa được phát.
+                Mỗi SOS gọi tối đa 10 người. Việc chọn cuối cùng đủ điều kiện hiến vẫn do cơ sở y tế quyết định.
+              </p>
+
+              {(!rewards || rewards.length === 0) && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 13, color: 'var(--bb-gray-600)' }}>
+                    {responders?.length ?? 0}/6 người nhận lời tối thiểu
+                  </span>
+                  <select
+                    aria-label="Chọn người hiến chính"
+                    value={primaryDonorId}
+                    disabled={(responders?.length ?? 0) < 6 || selectRewardRecipients.isPending}
+                    onChange={e => setPrimaryDonorId(e.target.value)}
+                    style={{ minWidth: 220 }}
+                  >
+                    <option value="">Chọn người chính…</option>
+                    {(responders ?? []).map(r => (
+                      <option key={r.donor_id} value={r.donor_id}>{r.donor_id} · {r.blood_type ?? '—'}</option>
+                    ))}
+                  </select>
+                  <button className="btn btn-primary"
+                    disabled={!primaryDonorId || (responders?.length ?? 0) < 6 || selectRewardRecipients.isPending}
+                    onClick={() => selectRewardRecipients.mutate(primaryDonorId)}>
+                    Chốt người chính
+                  </button>
+                  {selectRewardRecipients.isPending && <span style={{ fontSize: 12 }}>Đang lập phương án…</span>}
+                  {selectRewardRecipients.isError && (
+                    <span role="alert" style={{ color: 'var(--bb-red)', fontSize: 12 }}>
+                      {selectRewardRecipients.error.message}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {!!rewards?.length && (
+                <div className="table-wrap" style={{ marginTop: 12 }}>
+                  <table>
+                    <thead>
+                      <tr><th>Người hiến</th><th>Vai trò</th><th>Trạng thái</th><th>Quà đề xuất</th><th>Thao tác</th></tr>
+                    </thead>
+                    <tbody>
+                      {rewards.map((reward: SosReward) => {
+                        const statusLabel = {
+                          awaiting_donation: 'Chờ cơ sở xác nhận hiến',
+                          awaiting_choice: 'Chờ chọn tiếp tục / xin dừng',
+                          compensation_proposed: 'Đề xuất bù phiền (mô phỏng)',
+                          mock_ready: 'Đủ điều kiện quà (mô phỏng)',
+                          not_completed: 'Chưa ghi nhận hoàn tất',
+                        }[reward.status]
+                        return (
+                          <tr key={reward.id}>
+                            <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{reward.donor_id}</td>
+                            <td>{reward.role === 'primary' ? 'Người chính' : 'Dự bị'}</td>
+                            <td>{statusLabel}</td>
+                            <td>{reward.proposed_amount_vnd == null ? '—' : `${reward.proposed_amount_vnd.toLocaleString('vi-VN')}đ`}</td>
+                            <td style={{ whiteSpace: 'nowrap' }}>
+                              {reward.status === 'awaiting_choice' && (
+                                <span style={{ display: 'inline-flex', gap: 6 }}>
+                                  <button className="btn" disabled={chooseBackup.isPending}
+                                    onClick={() => chooseBackup.mutate({ donorId: reward.donor_id, choice: 'continue' })}>
+                                    Tiếp tục dự bị
+                                  </button>
+                                  <button className="btn" disabled={chooseBackup.isPending}
+                                    onClick={() => chooseBackup.mutate({ donorId: reward.donor_id, choice: 'decline' })}>
+                                    Xin dừng
+                                  </button>
+                                </span>
+                              )}
+                              {reward.status === 'awaiting_donation' && (
+                                <button className="btn btn-primary" disabled={confirmDonation.isPending}
+                                  onClick={() => confirmDonation.mutate(reward.donor_id)}>
+                                  Cơ sở xác nhận đã hiến
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                  {(chooseBackup.isError || confirmDonation.isError) && (
+                    <p role="alert" style={{ color: 'var(--bb-red)', fontSize: 12 }}>
+                      {(chooseBackup.error ?? confirmDonation.error)?.message}
+                    </p>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
+
           {notifications && notifications.length > 0 && (
             <div style={{ marginTop: 16 }}>
               <h4 style={{ marginBottom: 8 }}>
@@ -469,7 +591,7 @@ export default function SOS() {
 
       <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--bb-gray-400)', marginTop: 4 }}>
         <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}><Clock size={13} /> Mốc leo thang T+0/10/25/45</span>
-        <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}><Users size={13} /> Danh sách người hiến ở mục "Tìm người hiến"</span>
+        <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}><Users size={13} /> Xem lớp người hiến trên Bản đồ</span>
       </div>
     </>
   )
