@@ -8,6 +8,7 @@ class Settings(BaseSettings):
 
     # ── Database ──
     database_url: str = "postgresql+asyncpg://bloodblink:bloodblink@localhost:5432/bloodblink"
+    database_ssl: bool = False
     postgres_host: str = "localhost"
     postgres_port: int = 5432
     postgres_db: str = "bloodblink"
@@ -18,6 +19,7 @@ class Settings(BaseSettings):
     sim_seed: int = 42
     sim_days: int = 90
     sim_start_date: str = "2025-07-01"
+    osrm_url: str = "http://localhost:5000"
 
     # ── Safety thresholds (TT 26/2013/TT-BYT) ──
     # Two modes per component: STORAGE vs TRANSPORT (Article 20)

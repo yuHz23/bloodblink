@@ -13,7 +13,7 @@ import hashlib
 
 from sqlalchemy import (
     Column, String, Integer, Float, Boolean, DateTime, Date, ForeignKey,
-    Text, Index, CheckConstraint, Enum, Numeric, BigInteger
+    Text, Index, CheckConstraint, Enum, Numeric, BigInteger, UniqueConstraint
 )
 from sqlalchemy import JSON
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY
@@ -178,11 +178,13 @@ class TransferRequest(Base):
     needed_by             = Column(DateTime(timezone=True), nullable=False)
     created_at            = Column(DateTime(timezone=True), nullable=False, default=utcnow)
     state                 = Column(Enum(TransferState), default=TransferState.PENDING)
+    recipient_sex         = Column(String(1), nullable=True)
+    recipient_age         = Column(Integer, nullable=True)
 
     # Relationships
     requester  = relationship("Facility", back_populates="transfer_requests", foreign_keys=[requester_facility_id])
     candidates = relationship("TransferCandidate", back_populates="request", order_by="TransferCandidate.rank")
-    order      = relationship("TransferOrder", back_populates="request", uselist=False)
+    orders     = relationship("TransferOrder", back_populates="request", order_by="TransferOrder.at")
 
     __table_args__ = (
         Index("ix_transfer_request_state_created", state, created_at),
@@ -201,10 +203,39 @@ class TransferCandidate(Base):
     score_breakdown    = Column(JSONB, nullable=False)  # {"urgency_expiry": 0.8, "time_margin": 0.6, ...}
     reason_text        = Column(Text, nullable=False)    # human-readable explanation
     eta_seconds        = Column(Integer, nullable=True)  # estimated travel time
+    compatible         = Column(Boolean, default=False, nullable=False)
+    blocked_reason     = Column(Text, nullable=True)
 
     # Relationships
     request = relationship("TransferRequest", back_populates="candidates")
     unit    = relationship("BloodUnit", back_populates="transfer_candidates")
+
+
+class TransferOffer(Base):
+    """A ranked, time-limited hospital invitation to support a transfer request."""
+    __tablename__ = "transfer_offer"
+
+    id                 = Column(String, primary_key=True)
+    request_id         = Column(String, ForeignKey("transfer_request.id"), nullable=False)
+    source_facility_id = Column(String, ForeignKey("facility.id"), nullable=True)
+    priority_rank      = Column(Integer, nullable=False)
+    available_qty      = Column(Integer, nullable=False, default=0)
+    offered_qty        = Column(Integer, nullable=False, default=1)
+    accepted_qty       = Column(Integer, nullable=False, default=0)
+    status             = Column(String(16), nullable=False, default="pending")
+    created_at         = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    expires_at         = Column(DateTime(timezone=True), nullable=False)
+    responded_at       = Column(DateTime(timezone=True), nullable=True)
+    response_note      = Column(Text, nullable=True)
+
+    request = relationship("TransferRequest")
+    source = relationship("Facility")
+
+    __table_args__ = (
+        UniqueConstraint("request_id", "source_facility_id", name="uq_transfer_offer_request_source"),
+        Index("ix_transfer_offer_source_status", source_facility_id, status),
+        Index("ix_transfer_offer_request_status", request_id, status),
+    )
 
 
 class TransferOrder(Base):
@@ -214,14 +245,36 @@ class TransferOrder(Base):
     id                  = Column(String, primary_key=True)
     request_id          = Column(String, ForeignKey("transfer_request.id"), nullable=False)
     source_facility_id  = Column(String, ForeignKey("facility.id"), nullable=False)
+    unit_id             = Column(String, ForeignKey("blood_unit.id"), nullable=True)
     state               = Column(Enum(TransferState), default=TransferState.APPROVED)
     approved_by         = Column(String, nullable=False)
     at                  = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    completed_at        = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
-    request  = relationship("TransferRequest", back_populates="order")
+    request  = relationship("TransferRequest", back_populates="orders")
     source   = relationship("Facility", back_populates="transfer_orders", foreign_keys=[source_facility_id])
     shipment = relationship("Shipment", back_populates="order", uselist=False)
+
+
+class FacilitySupportContribution(Base):
+    """Confirmed blood transfers used to apply reciprocal matching priority."""
+    __tablename__ = "facility_support_contribution"
+
+    id                    = Column(String, primary_key=True)
+    transfer_order_id     = Column(String, ForeignKey("transfer_order.id"), nullable=False, unique=True)
+    request_id            = Column(String, ForeignKey("transfer_request.id"), nullable=False)
+    unit_id               = Column(String, ForeignKey("blood_unit.id"), nullable=False)
+    supporter_facility_id = Column(String, ForeignKey("facility.id"), nullable=False)
+    beneficiary_facility_id = Column(String, ForeignKey("facility.id"), nullable=False)
+    component_code        = Column(Enum(ComponentCode), nullable=False)
+    quantity              = Column(Integer, nullable=False, default=1)
+    at                    = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+    __table_args__ = (
+        Index("ix_support_reciprocity", supporter_facility_id, beneficiary_facility_id, at),
+        Index("ix_support_beneficiary", beneficiary_facility_id, at),
+    )
 
 
 class Shipment(Base):
@@ -381,6 +434,26 @@ class SOSNotification(Base):
         # vòng — nếu không, người ở vòng 0 sẽ bị gọi lại ở vòng 1, 2 và 3.
         Index("ix_sos_notif_event_donor", sos_event_id, donor_id, unique=True),
         Index("ix_sos_notif_donor_status", donor_id, status),
+    )
+
+
+class SOSReward(Base):
+    """Proposed, mock-only donor incentives attached to an SOS event."""
+    __tablename__ = "sos_reward"
+
+    id                     = Column(String, primary_key=True)
+    sos_event_id           = Column(String, ForeignKey("sos_event.id"), nullable=False)
+    donor_id               = Column(String, ForeignKey("donor.id"), nullable=False)
+    role                   = Column(String, nullable=False)  # primary | backup
+    status                 = Column(String, nullable=False)  # awaiting_donation | awaiting_choice | compensation_proposed | mock_ready | not_completed
+    proposed_amount_vnd    = Column(Integer, nullable=True)
+    created_at             = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    decision_at            = Column(DateTime(timezone=True), nullable=True)
+    donation_confirmed_at  = Column(DateTime(timezone=True), nullable=True)
+    donation_confirmed_by  = Column(String, nullable=True)
+
+    __table_args__ = (
+        Index("ix_sos_reward_event_donor", sos_event_id, donor_id, unique=True),
     )
 
 

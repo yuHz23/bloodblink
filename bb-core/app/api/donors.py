@@ -17,12 +17,12 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.config import settings
-from app.models.database import Donor, Facility, SOSEvent, SOSNotification, ABO, RhD
+from app.models.database import Donor, Facility, SOSEvent, SOSNotification, SOSReward, ABO, RhD
 from app.services import audit
 from app.services.eligibility import donation_eligibility, eligible_cutoff
 from app.services.sos_dispatch import build_message
@@ -339,26 +339,60 @@ async def sos_inbox(
     require_self_or_staff(principal, donor_id)
 
     stmt = (
-        select(SOSNotification, SOSEvent)
+        select(SOSNotification, SOSEvent, SOSReward)
         .join(SOSEvent, SOSEvent.id == SOSNotification.sos_event_id)
+        .outerjoin(SOSReward, and_(
+            SOSReward.sos_event_id == SOSEvent.id,
+            SOSReward.donor_id == SOSNotification.donor_id,
+        ))
         .where(SOSNotification.donor_id == donor_id)
-        .where(SOSEvent.status == "open")
+        .where(or_(SOSEvent.status == "open", SOSReward.id.is_not(None)))
         .order_by(SOSNotification.created_at.desc())
         .limit(limit)
     )
     if not include_read:
-        stmt = stmt.where(SOSNotification.status != "read")
+        stmt = stmt.where(or_(SOSNotification.status != "read", SOSReward.id.is_not(None)))
 
     rows = (await db.execute(stmt)).all()
 
     items = []
-    for notification, event in rows:
+    for notification, event, reward in rows:
         facility = await db.get(Facility, event.facility_id) if event.facility_id else None
         title, body = build_message(event, facility.name if facility else None)
         blood = f"{event.abo or ''}{event.rh or ''}".strip() or None
 
+        if reward is not None:
+            if reward.role == "primary":
+                title = "Bạn được chọn cho lượt hiến SOS này"
+                body = (
+                    "Cảm ơn bạn đã nhận lời. Cơ sở y tế sẽ liên hệ và xác nhận việc hiến. "
+                    "Phương án quà 100.000đ hiện chỉ là mô phỏng."
+                )
+            elif reward.status == "awaiting_choice":
+                title = "Cảm ơn bạn đã nhận lời SOS"
+                body = (
+                    "Xin lỗi, ca này đã chọn người chính. Bạn có thể tiếp tục làm người dự bị: "
+                    "phương án quà 80.000đ sau khi cơ sở xác nhận hiến; hoặc xin dừng với "
+                    "phương án bù phiền 30.000đ. Đây là mô phỏng, chưa phát quà thật."
+                )
+            elif reward.status == "awaiting_donation":
+                title = "Bạn đang trong danh sách hiến SOS"
+                body = "Cơ sở y tế sẽ đánh giá điều kiện hiến. Mọi khoản quà đang ở chế độ mô phỏng."
+            elif reward.status == "compensation_proposed":
+                title = "Cảm ơn bạn đã phản hồi"
+                body = "Đã ghi nhận bạn xin dừng. Phương án bù phiền 30.000đ chỉ là mô phỏng."
+            elif reward.status == "mock_ready":
+                title = "Cơ sở đã xác nhận kết quả hiến"
+                body = (
+                    f"Phương án quà {reward.proposed_amount_vnd or 0:,}đ đã được ghi nhận ở chế độ "
+                    "mô phỏng; chưa phát hành voucher."
+                )
+            else:
+                title = "Cập nhật kết quả SOS"
+                body = "Cơ sở chưa ghi nhận hoàn tất hiến trong đợt SOS này."
+
         items.append(SOSInboxItem(
-            notification_id=notification.id,
+            notification_id=f"reward-{reward.id}-{reward.status}" if reward is not None else notification.id,
             event_id=event.id,
             ring=notification.ring,
             notified_at=notification.created_at,
@@ -376,6 +410,9 @@ async def sos_inbox(
             facility_name=facility.name if facility else None,
             title=title,
             body=body,
+            reward_role=reward.role if reward is not None else None,
+            reward_status=reward.status if reward is not None else None,
+            reward_amount_vnd=reward.proposed_amount_vnd if reward is not None else None,
         ))
     return items
 

@@ -198,6 +198,37 @@ def generate_blood_units(
                     units.append(unit)
                     seq += 1
 
+    # Small deterministic demo set keeps both FEFO urgency windows populated
+    # after a fresh seed, even when the random collection sample is sparse.
+    now = datetime.now(timezone.utc)
+    fefo_examples = [
+        (ComponentCode.PLT, "fac-bv-cho-ray", ABO.O, RhD.POS, 8),
+        (ComponentCode.RBC, "fac-bv-tmhh", ABO.A, RhD.POS, 18),
+        (ComponentCode.PLT, "fac-bv-ung-buou", ABO.B, RhD.POS, 36),
+        (ComponentCode.RBC, "fac-bv-nhi-dong", ABO.O, RhD.NEG, 60),
+        (ComponentCode.RBC, "fac-bv-pham-ngoc-thach", ABO.AB, RhD.POS, 68),
+        (ComponentCode.FFP, "fac-bv-cho-ray", ABO.O, RhD.POS, 144),
+    ]
+    for comp_code, facility_id, abo, rh, hours_remaining in fefo_examples:
+        expires_at = now + timedelta(hours=hours_remaining)
+        shelf_days = _SHELF_LIFE[comp_code] or 365
+        collected_at = expires_at - timedelta(days=shelf_days)
+        units.append(BloodUnit(
+            id=str(uuid.uuid4()),
+            isbt_din=_generate_isbt_din(collected_at.date(), seq),
+            component_code=comp_code,
+            abo=abo,
+            rh=rh,
+            volume_ml=_pick_volume(comp_code),
+            collected_at=collected_at,
+            expires_at=expires_at,
+            status=UnitStatus.AVAILABLE,
+            held_by_facility_id=facility_id,
+            irradiated=False,
+            leukoreduced=comp_code == ComponentCode.RBC,
+        ))
+        seq += 1
+
     return units
 
 

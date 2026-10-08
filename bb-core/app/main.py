@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import inspect
 
 from app.api.inventory import router as inventory_router
 from app.api.matching import router as matching_router
@@ -25,6 +26,8 @@ from app.api.facilities import router as facilities_router
 from app.api.audit import router as audit_router
 from app.api.deps import require_staff
 from app.config import settings
+from app.database import engine
+from app.models.database import Base, FacilitySupportContribution, SOSReward, TransferOffer
 from app.services.scheduler import start_scheduler, stop_scheduler
 
 DEFAULT_JWT_SECRET = "bloodblink-dev-doi-khoa-nay-truoc-khi-trien-khai"
@@ -42,6 +45,40 @@ async def lifespan(app: FastAPI):
             "`python -c \"import secrets; print(secrets.token_urlsafe(48))\"`), "
             "hoặc đặt ALLOW_DEFAULT_JWT_SECRET=true nếu đang chạy thử trên máy cá nhân."
         )
+
+    # Additive schema updates for installations created before the matching
+    # safety and reciprocity fields existed. New databases already have these
+    # columns from Base.metadata.create_all in seed_db.py.
+    def apply_schema_updates(sync_connection):
+        additions = {
+            "transfer_request": {
+                "recipient_sex": "VARCHAR(1)",
+                "recipient_age": "INTEGER",
+            },
+            "transfer_candidate": {
+                "compatible": "BOOLEAN NOT NULL DEFAULT FALSE",
+                "blocked_reason": "TEXT",
+            },
+            "transfer_order": {
+                "unit_id": "VARCHAR REFERENCES blood_unit(id)",
+                "completed_at": "TIMESTAMP WITH TIME ZONE",
+            },
+        }
+        inspector = inspect(sync_connection)
+        for table_name, columns in additions.items():
+            existing = {column["name"] for column in inspector.get_columns(table_name)}
+            for column_name, column_type in columns.items():
+                if column_name not in existing:
+                    sync_connection.exec_driver_sql(
+                        f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"
+                    )
+        FacilitySupportContribution.__table__.create(sync_connection, checkfirst=True)
+        SOSReward.__table__.create(sync_connection, checkfirst=True)
+        TransferOffer.__table__.create(sync_connection, checkfirst=True)
+
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+        await connection.run_sync(apply_schema_updates)
 
     start_scheduler()
     yield

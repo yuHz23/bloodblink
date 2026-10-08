@@ -108,6 +108,7 @@ def find_matching_units(
     safety_margin_hours: float = 2.0,
     facility_stock_counts: Optional[dict[str, dict[str, int]]] = None,
     facility_safety_thresholds: Optional[dict[str, dict[str, int]]] = None,
+    reciprocity_credits: Optional[dict[str, int]] = None,
     eta_lookup: Optional[callable] = None,
 ) -> list[MatchResult]:
     """
@@ -120,6 +121,7 @@ def find_matching_units(
         safety_margin_hours: Buffer before expiry (default 2 hours).
         facility_stock_counts: {facility_id: {component: count}} for source stock check.
         facility_safety_thresholds: {facility_id: {component: min_count}} per facility.
+        reciprocity_credits: {source_facility_id: confirmed units previously received from requester}.
         eta_lookup: async function(from_facility_id, to_facility_id) -> int (seconds).
 
     Returns:
@@ -140,13 +142,39 @@ def find_matching_units(
             safety_margin_hours=safety_margin_hours,
             facility_stock_counts=facility_stock_counts or {},
             facility_safety_thresholds=facility_safety_thresholds or {},
+            reciprocity_credits=reciprocity_credits or {},
             eta_lookup=eta_lookup,
         )
         if result is not None:
             results.append(result)
 
-    # Sort by score descending, then by expiry ascending (FEFO tiebreak)
-    results.sort(key=lambda r: (-r.score, r.reason_text))
+    # Keep compatible, group-specific units ahead of O-negative reserve units.
+    # O- remains available when other compatible stock cannot cover the request.
+    candidate_by_id = {c.unit_id: c for c in candidates}
+    recipient_abo = request.abo or "O"
+    is_childbearing_age = (
+        request.recipient_sex == "F"
+        and (request.recipient_age is None or 18 <= request.recipient_age <= 45)
+    )
+    recipient_rh = request.rh or ("-" if is_childbearing_age else "+")
+
+    def uses_o_negative_reserve(result: MatchResult) -> bool:
+        unit = candidate_by_id.get(result.unit_id)
+        return bool(
+            result.compatible
+            and request.component_code in (ComponentCode.RBC.value, ComponentCode.WB.value)
+            and unit
+            and unit.abo == "O"
+            and unit.rh == "-"
+            and (recipient_abo != "O" or recipient_rh != "-")
+        )
+
+    results.sort(key=lambda r: (
+        not r.compatible,
+        uses_o_negative_reserve(r),
+        -r.score,
+        candidate_by_id[r.unit_id].expires_at if r.unit_id in candidate_by_id else datetime.max.replace(tzinfo=timezone.utc),
+    ))
     for i, r in enumerate(results):
         r.rank = i + 1
 
@@ -161,6 +189,7 @@ def _evaluate_candidate(
     safety_margin_hours: float,
     facility_stock_counts: dict,
     facility_safety_thresholds: dict,
+    reciprocity_credits: dict,
     eta_lookup: Optional[callable] = None,
 ) -> Optional[MatchResult]:
     """Evaluate a single candidate unit against a request."""
@@ -172,8 +201,13 @@ def _evaluate_candidate(
         return None
 
     # 1b. ABO/RhD compatibility (with professional constraints)
-    recipient_abo = request.abo or "O"  # default to O if unspecified (safest)
-    recipient_rh = request.rh or "+"
+    recipient_abo = request.abo or "O"  # unknown ABO: use group O red-cell compatibility
+    is_childbearing_age = (
+        request.recipient_sex == "F"
+        and (request.recipient_age is None or 18 <= request.recipient_age <= 45)
+    )
+    # Unknown RhD for a woman of childbearing age is handled conservatively as RhD-negative.
+    recipient_rh = request.rh or ("-" if is_childbearing_age else "+")
 
     compat, compat_reason = is_compatible(
         donor_abo=candidate.abo,
@@ -256,7 +290,9 @@ def _evaluate_candidate(
 
     # Factor 5: Risk/cost penalty (route complexity placeholder)
     risk_penalty = 0.0
-    if candidate.abo == "O" and candidate.rh == "-" and (recipient_abo != "O" or recipient_rh != "-"):
+    if (request.component_code in (ComponentCode.RBC.value, ComponentCode.WB.value)
+            and candidate.abo == "O" and candidate.rh == "-"
+            and (recipient_abo != "O" or recipient_rh != "-")):
         risk_penalty = 0.3  # O- used for non-O- is penalized
     if candidate.irradiated and request.component_code != "RBC":
         risk_penalty += 0.05  # unnecessary irradiation
@@ -269,6 +305,10 @@ def _evaluate_candidate(
         + weights["source_stock_margin"] * source_stock_margin
         + weights["risk_penalty"] * (1.0 - risk_penalty)
     )
+    reciprocity_count = reciprocity_credits.get(source_id, 0)
+    reciprocity_cap = 0.05 if request.urgency == "emergency" else 0.16
+    reciprocity_bonus = min(reciprocity_cap, reciprocity_count * 0.04)
+    score += reciprocity_bonus
     score = max(0.0, min(1.0, score))
 
     # ── Build reason text ────────────────────────────────────────
@@ -301,8 +341,12 @@ def _evaluate_candidate(
         reason_parts.append(f"nguồn còn {current} đơn vị")
 
     # O- warning
-    if candidate.abo == "O" and candidate.rh == "-" and (recipient_abo != "O" or recipient_rh != "-"):
+    if (request.component_code in (ComponentCode.RBC.value, ComponentCode.WB.value)
+            and candidate.abo == "O" and candidate.rh == "-"
+            and (recipient_abo != "O" or recipient_rh != "-")):
         reason_parts.append("⚠️ O- = tài nguyên khan hiếm")
+    if reciprocity_count > 0:
+        reason_parts.append(f"ưu tiên có đi có lại ({reciprocity_count} đơn vị đã nhận hỗ trợ)")
 
     reason_text = ", ".join(reason_parts)
     if reason_text:
@@ -317,6 +361,8 @@ def _evaluate_candidate(
         "blood_group_match": round(blood_group_score, 3),
         "source_stock_margin": round(source_stock_margin, 3),
         "risk_penalty": round(1.0 - risk_penalty, 3),
+        "reciprocity_bonus": round(reciprocity_bonus, 3),
+        "reciprocity_credits": reciprocity_count,
         "hours_remaining": round(hours_remaining, 1),
         "eta_seconds": eta_seconds,
     }

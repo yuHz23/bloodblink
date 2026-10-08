@@ -1,18 +1,19 @@
 """BB-Core — Routing API: ETA comparison and route queries."""
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.config import settings
 from app.services.routing import (
-    RoutingService, OSRMRouting, StraightLineRouting,
+    RoutingService, OSRMRouting,
     HCMC_FACILITIES, ETA_COMPARISON_PAIRS,
 )
 
 router = APIRouter()
 
-# Global routing service — defaults to straight line, swap to OSRM when available
-routing_service = RoutingService()
+# Use road geometry for ETAs and map routes. OSRM_URL can point to a hosted router.
+routing_service = RoutingService(provider=OSRMRouting(base_url=settings.osrm_url))
 
 
 @router.get("/eta")
@@ -34,6 +35,7 @@ async def get_eta(
         "duration_min": round(result.duration_s / 60, 1),
         "provider": result.provider,
         "routing_mode": result.mode,
+        "geometry": [[coordinate[1], coordinate[0]] for coordinate in (result.geometry or [])],
     }
 
 
@@ -130,13 +132,11 @@ async def get_eta_from_facility(
 
 @router.post("/set-provider")
 async def set_routing_provider(
-    provider: str = Query(..., description="Provider: 'straight_line' or 'osrm'"),
-    osrm_url: str = Query(default="http://localhost:5000", description="OSRM base URL"),
+    provider: str = Query(..., description="Road routing provider: 'osrm'"),
+    osrm_url: str = Query(default=settings.osrm_url, description="OSRM base URL"),
 ):
-    """Switch routing provider at runtime."""
-    if provider == "osrm":
-        routing_service.set_provider(OSRMRouting(base_url=osrm_url))
-        return {"provider": "osrm", "url": osrm_url}
-    else:
-        routing_service.set_provider(StraightLineRouting())
-        return {"provider": "straight_line"}
+    """Configure road routing; straight-line routes are disabled."""
+    if provider != "osrm":
+        raise HTTPException(status_code=422, detail="Chỉ hỗ trợ định tuyến đường bộ qua OSRM.")
+    routing_service.set_provider(OSRMRouting(base_url=osrm_url))
+    return {"provider": "osrm", "url": osrm_url}

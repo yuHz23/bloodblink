@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.models.database import Donor, SOSEvent, SOSResponse, SOSNotification, ABO, RhD
+from app.models.database import Donor, SOSEvent, SOSResponse, SOSNotification, SOSReward, ABO, RhD
 from app.services import audit
 from app.services.eligibility import donation_eligibility, eligible_cutoff
 from app.services.sos_dispatch import (
@@ -34,9 +34,11 @@ from app.services.sos_dispatch import (
 from app.api.deps import Principal, get_principal, require_staff, require_self_or_staff
 from app.api.schemas import (
     SOSEventIn, SOSEventOut, SOSRespondIn, SOSNotificationOut, SOSResponderOut,
+    SOSRewardSelectIn, SOSRewardChoiceIn, SOSRewardDonationIn, SOSRewardOut,
 )
 
 router = APIRouter()
+SOS_REWARD_MIN_ACCEPTANCES = 6
 
 
 def _describe(event: SOSEvent, matched: int, notified: int, cell: Optional[str]) -> str:
@@ -59,6 +61,11 @@ def _event_out(event: SOSEvent, *, message: str = "", notified: int = 0) -> SOSE
     out.message = message
     out.donors_notified = notified
     return out
+
+
+def _require_event_facility(event: SOSEvent, principal: Principal) -> None:
+    if principal.role != "admin" and event.facility_id and principal.facility_id != event.facility_id:
+        raise HTTPException(status_code=403, detail="Chỉ cơ sở phát SOS mới quản lý được phương án quà")
 
 
 # ── Endpoints ─────────────────────────────────────────────────────
@@ -258,6 +265,161 @@ async def list_responders(
     })
     await db.commit()
     return out
+
+
+@router.get("/event/{event_id}/rewards", response_model=list[SOSRewardOut])
+async def list_sos_rewards(
+    event_id: str,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(require_staff),
+):
+    """Phương án quà mô phỏng của nhóm người đã nhận lời trong một ca SOS."""
+    event = await db.get(SOSEvent, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện SOS")
+    _require_event_facility(event, principal)
+    rows = (await db.execute(
+        select(SOSReward)
+        .where(SOSReward.sos_event_id == event_id)
+        .order_by(SOSReward.created_at, SOSReward.donor_id)
+    )).scalars().all()
+    return rows
+
+
+@router.post("/event/{event_id}/rewards/select", response_model=list[SOSRewardOut])
+async def select_sos_reward_recipients(
+    event_id: str,
+    req: SOSRewardSelectIn,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(require_staff),
+):
+    """Chọn một người chính sau khi có ít nhất sáu người nhận lời; những người còn lại là dự bị."""
+    event = await db.get(SOSEvent, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện SOS")
+    _require_event_facility(event, principal)
+
+    existing = (await db.execute(
+        select(SOSReward.id).where(SOSReward.sos_event_id == event_id).limit(1)
+    )).scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=409, detail="Đã lập phương án quà cho SOS này")
+
+    cohort = (await db.execute(
+        select(SOSResponse)
+        .where(SOSResponse.sos_event_id == event_id, SOSResponse.outcome == "accepted")
+        .order_by(SOSResponse.responded_at, SOSResponse.id)
+    )).scalars().all()
+    if len(cohort) < 6:
+        raise HTTPException(status_code=409, detail="Cần ít nhất 6 người nhận lời trước khi chọn")
+    if req.primary_donor_id not in {r.donor_id for r in cohort}:
+        raise HTTPException(status_code=422, detail="Chỉ chọn được người đã nhận lời SOS này")
+
+    now = datetime.now(timezone.utc)
+    for response in cohort:
+        primary = response.donor_id == req.primary_donor_id
+        db.add(SOSReward(
+            id=str(uuid.uuid4()),
+            sos_event_id=event_id,
+            donor_id=response.donor_id,
+            role="primary" if primary else "backup",
+            status="awaiting_donation" if primary else "awaiting_choice",
+            proposed_amount_vnd=100_000 if primary else None,
+            created_at=now,
+        ))
+
+    await audit.record(db, principal.subject, audit.SOS_REWARD_SELECT, {
+        "event_id": event_id, "primary_donor_id": req.primary_donor_id,
+        "cohort_size": len(cohort), "mock_only": True,
+    })
+    await db.commit()
+    rows = (await db.execute(
+        select(SOSReward)
+        .where(SOSReward.sos_event_id == event_id)
+        .order_by(SOSReward.created_at, SOSReward.donor_id)
+    )).scalars().all()
+    return rows
+
+
+@router.post("/event/{event_id}/rewards/{donor_id}/choice", response_model=SOSRewardOut)
+async def record_sos_reward_choice(
+    event_id: str,
+    donor_id: str,
+    req: SOSRewardChoiceIn,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+):
+    """Ghi nhận người dự bị muốn tiếp tục hiến hoặc xin dừng; đây chưa phải giao dịch tiền."""
+    event = await db.get(SOSEvent, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện SOS")
+    require_self_or_staff(principal, donor_id)
+    if principal.is_staff:
+        _require_event_facility(event, principal)
+    reward = (await db.execute(select(SOSReward).where(
+        SOSReward.sos_event_id == event_id, SOSReward.donor_id == donor_id,
+    ))).scalar_one_or_none()
+    if reward is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy người trong phương án quà")
+    if reward.role != "backup" or reward.status != "awaiting_choice":
+        raise HTTPException(status_code=409, detail="Chỉ người dự bị đang chờ mới nhận được lựa chọn này")
+
+    reward.decision_at = datetime.now(timezone.utc)
+    if req.choice == "continue":
+        reward.status = "awaiting_donation"
+    else:
+        reward.status = "compensation_proposed"
+        reward.proposed_amount_vnd = 30_000
+
+    await audit.record(db, principal.subject, audit.SOS_REWARD_CHOICE, {
+        "event_id": event_id, "donor_id": donor_id,
+        "choice": req.choice, "mock_only": True,
+    })
+    await db.commit()
+    await db.refresh(reward)
+    return reward
+
+
+@router.post("/event/{event_id}/rewards/{donor_id}/donation", response_model=SOSRewardOut)
+async def confirm_sos_reward_donation(
+    event_id: str,
+    donor_id: str,
+    req: SOSRewardDonationIn,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(require_staff),
+):
+    """Cơ sở ghi nhận kết quả hiến; không nhận/tải lên giấy tờ y tế hay phát voucher thật."""
+    event = await db.get(SOSEvent, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện SOS")
+    _require_event_facility(event, principal)
+    reward = (await db.execute(select(SOSReward).where(
+        SOSReward.sos_event_id == event_id, SOSReward.donor_id == donor_id,
+    ))).scalar_one_or_none()
+    if reward is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy người trong phương án quà")
+    if reward.status != "awaiting_donation":
+        raise HTTPException(status_code=409, detail="Người hiến chưa ở trạng thái chờ xác nhận hiến")
+
+    now = datetime.now(timezone.utc)
+    reward.decision_at = now
+    if req.donated:
+        reward.status = "mock_ready"
+        reward.proposed_amount_vnd = 100_000 if reward.role == "primary" else 80_000
+        reward.donation_confirmed_at = now
+        reward.donation_confirmed_by = principal.subject
+    else:
+        reward.status = "not_completed"
+        reward.proposed_amount_vnd = None
+
+    await audit.record(db, principal.subject, audit.SOS_REWARD_CONFIRM, {
+        "event_id": event_id, "donor_id": donor_id,
+        "donated": req.donated, "role": reward.role,
+        "mock_only": True,
+    })
+    await db.commit()
+    await db.refresh(reward)
+    return reward
 
 
 @router.get("/donors/nearby")
@@ -529,11 +691,15 @@ async def donor_respond(
             SOSResponse.outcome == "accepted",
         )
     )).scalar_one() or 0
-    if event.accept_count >= (event.target_count or 1):
-        # Đủ người rồi thì bộ lập lịch thôi nâng vòng (chỉ quét status "open").
+    # Keep the campaign active until the six-person choice pool exists, even if
+    # the clinical request itself needs fewer units. The receiving facility
+    # still makes the final eligibility decision for the selected donor.
+    completion_threshold = max(event.target_count or 1, SOS_REWARD_MIN_ACCEPTANCES)
+    if event.accept_count >= completion_threshold:
+        # The response pool is ready; stop the scheduler from inviting more donors.
         event.status = "fulfilled"
     elif event.status == "fulfilled":
-        # Có người rút lời → chưa đủ nữa → mở lại để leo thang tiếp.
+        # A donor retracts before a reward plan is recorded; reopen the campaign.
         event.status = "open"
 
     await audit.record(db, req.donor_id, audit.SOS_RESPOND, {

@@ -107,8 +107,9 @@ def is_compatible(
     if recipient_type not in compatible_types:
         return False, f"ABO/RhD không tương hợp: {donor_type} → {recipient_type}"
 
-    # Professional constraint 1: O- should be reserved for emergencies
-    is_on_neg = donor_type == "O-"
+    # O-negative scarcity applies to red-cell products, not plasma.
+    is_red_cell = component in (ComponentCode.RBC.value, ComponentCode.WB.value)
+    is_on_neg = donor_type == "O-" and is_red_cell
     recipient_is_on_neg = recipient_type == "O-"
 
     # Professional constraint 2: No RhD downgrade for women of childbearing age
@@ -174,7 +175,7 @@ def compute_compatibility_score(
         score = 0.5
 
     # O- penalty
-    if donor_type == "O-" and recipient_type != "O-":
+    if component in (ComponentCode.RBC.value, ComponentCode.WB.value) and donor_type == "O-" and recipient_type != "O-":
         score -= 0.3
 
     return max(0.0, score)

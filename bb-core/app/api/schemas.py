@@ -74,8 +74,8 @@ class TransferRequestIn(BaseModel):
     qty: int = Field(default=1, ge=1)
     urgency: str = Field(default="routine")  # routine | urgent | emergency
     needed_by: datetime
-    recipient_sex: Optional[str] = None
-    recipient_age: Optional[int] = None
+    recipient_sex: Optional[str] = Field(default=None, pattern="^[MF]$")
+    recipient_age: Optional[int] = Field(default=None, ge=0, le=120)
 
 
 class TransferRequestOut(BaseModel):
@@ -89,9 +89,54 @@ class TransferRequestOut(BaseModel):
     needed_by: datetime
     created_at: datetime
     state: str
+    recipient_sex: Optional[str] = None
+    recipient_age: Optional[int] = None
 
     class Config:
         from_attributes = True
+
+
+class TransferOrderOut(BaseModel):
+    id: str
+    request_id: str
+    source_facility_id: str
+    unit_id: Optional[str] = None
+    state: str
+    approved_by: str
+    at: datetime
+    completed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class TransferOfferResponseIn(BaseModel):
+    accept: bool
+    note: Optional[str] = Field(default=None, max_length=240)
+
+
+class TransferOfferOut(BaseModel):
+    id: str
+    request_id: str
+    source_facility_id: Optional[str] = None
+    source_facility_name: str
+    requester_facility_id: str
+    requester_facility_name: str
+    component_code: str
+    abo: Optional[str] = None
+    rh: Optional[str] = None
+    qty: int
+    urgency: str
+    needed_by: datetime
+    priority_rank: int
+    available_qty: int
+    offered_qty: int
+    accepted_qty: int
+    status: str
+    created_at: datetime
+    expires_at: datetime
+    responded_at: Optional[datetime] = None
+    response_note: Optional[str] = None
 
 
 # ── Matching ──────────────────────────────────────────────────
@@ -348,6 +393,9 @@ class SOSInboxItem(BaseModel):
 
     title: str = ""
     body: str = ""
+    reward_role: Optional[str] = None
+    reward_status: Optional[str] = None
+    reward_amount_vnd: Optional[int] = None
 
 
 # ── Ghi vết & danh tính (P4) ───────────────────────────────────
@@ -365,6 +413,34 @@ class SOSResponderOut(BaseModel):
     responded_at: datetime
     contact_phone: Optional[str] = None
     contact_note: Optional[str] = None
+
+
+class SOSRewardSelectIn(BaseModel):
+    primary_donor_id: str
+
+
+class SOSRewardChoiceIn(BaseModel):
+    choice: str = Field(pattern="^(continue|decline)$")
+
+
+class SOSRewardDonationIn(BaseModel):
+    donated: bool
+
+
+class SOSRewardOut(BaseModel):
+    id: str
+    sos_event_id: str
+    donor_id: str
+    role: str
+    status: str
+    proposed_amount_vnd: Optional[int] = None
+    created_at: datetime
+    decision_at: Optional[datetime] = None
+    donation_confirmed_at: Optional[datetime] = None
+    donation_confirmed_by: Optional[str] = None
+
+    class Config:
+        from_attributes = True
 
 
 class AuditEntryOut(BaseModel):

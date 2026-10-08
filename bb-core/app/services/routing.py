@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import httpx
+from fastapi import HTTPException
 
 
 # ── Data classes ────────────────────────────────────────────────
@@ -29,9 +30,16 @@ class RouteResult:
     """Result from a routing query."""
     distance_m: float           # total distance in meters
     duration_s: float            # estimated travel time in seconds
-    geometry: Optional[str] = None  # polyline (OSRM format), if available
+    geometry: Optional[list[list[float]]] = None  # GeoJSON coordinates [longitude, latitude]
     provider: str = "unknown"   # which provider computed this
     mode: str = "road"          # "road" or "straight_line"
+
+
+class RoutingUnavailableError(HTTPException):
+    """Road routing could not provide a real route."""
+
+    def __init__(self, detail: str):
+        super().__init__(status_code=503, detail=detail)
 
 
 # ── Abstract interface ──────────────────────────────────────────
@@ -150,36 +158,39 @@ class OSRMRouting(RoutingProvider):
         # OSRM route API: /route/v1/{profile}/{coordinates}?overview=simplified
         url = f"{self.base_url}/route/v1/driving/{from_lon},{from_lat};{to_lon},{to_lat}"
         params = {
-            "overview": "simplified",
+            "overview": "full",
+            "geometries": "geojson",
             "steps": "false",
             "alternatives": "false",
         }
         try:
             resp = await self.client.get(url, params=params)
             resp.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise RoutingUnavailableError(
+                "Không kết nối được dịch vụ chỉ đường OSRM; không thể tạo tuyến đường bộ."
+            ) from exc
+
+        try:
             data = resp.json()
+        except ValueError as exc:
+            raise RoutingUnavailableError("OSRM trả về dữ liệu tuyến đường không hợp lệ.") from exc
 
-            if data.get("code") != "Ok" or not data.get("routes"):
-                # Fallback to straight line if OSRM fails
-                fallback = StraightLineRouting()
-                result = await fallback.get_route(from_lat, from_lon, to_lat, to_lon, mode)
-                result.provider = "oslm_fallback"
-                return result
+        if data.get("code") != "Ok" or not data.get("routes"):
+            raise RoutingUnavailableError("OSRM không tìm thấy tuyến đường bộ phù hợp.")
 
-            route = data["routes"][0]
-            return RouteResult(
-                distance_m=route["distance"],
-                duration_s=route["duration"],
-                geometry=route.get("geometry"),
-                provider="osrm",
-                mode="road",
-            )
-        except (httpx.HTTPError, Exception):
-            # Fallback to straight line on any error
-            fallback = StraightLineRouting()
-            result = await fallback.get_route(from_lat, from_lon, to_lat, to_lon, mode)
-            result.provider = "osrm_fallback"
-            return result
+        route = data["routes"][0]
+        geometry = (route.get("geometry") or {}).get("coordinates")
+        if not geometry or len(geometry) < 2:
+            raise RoutingUnavailableError("OSRM không trả về hình học tuyến đường bộ.")
+
+        return RouteResult(
+            distance_m=route["distance"],
+            duration_s=route["duration"],
+            geometry=geometry,
+            provider="osrm",
+            mode="road",
+        )
 
     async def get_eta(
         self, from_lat: float, from_lon: float, to_lat: float, to_lon: float, mode: str = "car"
@@ -196,11 +207,11 @@ class OSRMRouting(RoutingProvider):
 class RoutingService:
     """
     Facade that manages routing providers and provides a unified interface.
-    Defaults to straight-line, can be swapped to OSRM or commercial.
+    Defaults to road routing through OSRM.
     """
 
     def __init__(self, provider: Optional[RoutingProvider] = None):
-        self._provider = provider or StraightLineRouting()
+        self._provider = provider if provider is not None else OSRMRouting()
         self._straight_line = StraightLineRouting()  # always available as fallback
 
     def set_provider(self, provider: RoutingProvider):

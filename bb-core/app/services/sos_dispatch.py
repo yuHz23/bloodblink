@@ -31,6 +31,7 @@ from app.services.push import PushMessage, get_push_provider
 # Bán kính tìm kiếm theo vòng, tính bằng số ô H3 (res 7 ≈ 1,2 km/ô).
 # -1 = bỏ ràng buộc vị trí (vòng 3: toàn thành phố).
 RING_DISK_K = [0, 1, 2, -1]
+SOS_INVITATION_LIMIT = 10
 
 RING_LABEL = [
     "Vòng 0 (~1 km, cùng nhóm máu)",
@@ -194,6 +195,9 @@ async def dispatch_ring(db: AsyncSession, event: SOSEvent) -> DispatchResult:
     )).scalars())
     fresh = [d for d in donors if d.id not in already]
     result.already_notified = len(donors) - len(fresh)
+    # One SOS campaign invites at most ten donors total. Later escalation rings
+    # can fill any remaining slots when earlier rings had fewer eligible donors.
+    fresh = fresh[:max(0, SOS_INVITATION_LIMIT - len(already))]
     if not fresh:
         return result
 

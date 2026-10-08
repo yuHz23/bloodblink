@@ -44,6 +44,9 @@ SOS_OPEN = "sos.open"
 SOS_ESCALATE = "sos.escalate"
 SOS_RESPOND = "sos.respond"
 CONTACT_REVEAL = "sos.contact_reveal"
+SOS_REWARD_SELECT = "sos.reward_select"
+SOS_REWARD_CHOICE = "sos.reward_choice"
+SOS_REWARD_CONFIRM = "sos.reward_confirm"
 
 
 def compute_hash(prev_hash: Optional[str], actor: str, action: str,
