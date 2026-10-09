@@ -235,6 +235,10 @@ class SOSRespondIn(BaseModel):
     # lý do gì giữ số điện thoại của người đã nói "không thể".
     contact_phone: Optional[str] = Field(default=None, max_length=32)
     contact_note: Optional[str] = Field(default=None, max_length=200)
+    # Exact GPS is sent only after the donor explicitly accepts location sharing.
+    share_location: Optional[bool] = None
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
 
     @property
     def resolved_outcome(self) -> str:
@@ -413,6 +417,14 @@ class SOSResponderOut(BaseModel):
     responded_at: datetime
     contact_phone: Optional[str] = None
     contact_note: Optional[str] = None
+    location_sharing_consented: Optional[bool] = None
+
+
+class SOSResponderLocationOut(BaseModel):
+    """Precise locations explicitly shared for one active SOS, without donor identity."""
+    latitude: float
+    longitude: float
+    shared_at: datetime
 
 
 class SOSRewardSelectIn(BaseModel):

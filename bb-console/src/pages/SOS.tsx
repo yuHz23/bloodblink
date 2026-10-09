@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Siren, Clock, Users, ArrowUpRight, CheckCircle2, Phone, ShieldAlert } from 'lucide-react'
 import { api, type SosNotification, type SosResponder, type SosReward } from '../lib/api'
@@ -22,6 +22,7 @@ const RINGS = [
   { ring: 2, label: 'Vòng 2 — Mở rộng', radius: '~5 km', time: 'T+25 phút', color: '#ef4444' },
   { ring: 3, label: 'Vòng 3 — Toàn viện', radius: 'Toàn TP.HCM', time: 'T+45 phút', color: '#7c3aed' },
 ]
+const SOS_TRACKING_STORAGE_KEY = 'bb_sos_tracking'
 
 export default function SOS() {
   const { session } = useAuth()
@@ -33,9 +34,24 @@ export default function SOS() {
   const [urgency, setUrgency] = useState('emergency')
   const [qty, setQty] = useState(2)
   const [ring, setRing] = useState(0)
-  const [eventId, setEventId] = useState<string | null>(null)
+  const [eventId, setEventId] = useState<string | null>(() => new URLSearchParams(window.location.search).get('eventId'))
+  const [trackingDismissed, setTrackingDismissed] = useState(() => {
+    try { return window.localStorage.getItem(SOS_TRACKING_STORAGE_KEY) === 'disabled' } catch { return false }
+  })
   const [lastMessage, setLastMessage] = useState<string | null>(null)
-  const [primaryDonorId, setPrimaryDonorId] = useState('')
+
+  const stopTracking = () => {
+    setEventId(null)
+    setRing(0)
+    setTrackingDismissed(true)
+    try { window.localStorage.setItem(SOS_TRACKING_STORAGE_KEY, 'disabled') } catch { /* Keep the choice for this page. */ }
+  }
+  const followEvent = (id: string, eventRing: number) => {
+    setTrackingDismissed(false)
+    setEventId(id)
+    setRing(eventRing)
+    try { window.localStorage.removeItem(SOS_TRACKING_STORAGE_KEY) } catch { /* Keep the choice for this page. */ }
+  }
 
   const { data: facilities } = useQuery({
     queryKey: ['facilities'],
@@ -70,6 +86,8 @@ export default function SOS() {
     }),
     onSuccess: (ev) => {
       setEventId(ev.id)
+      setTrackingDismissed(false)
+      try { window.localStorage.removeItem(SOS_TRACKING_STORAGE_KEY) } catch { /* Keep tracking this new SOS on this page. */ }
       setLastMessage(ev.message)
       setRing(ev.ring)
     },
@@ -108,35 +126,68 @@ export default function SOS() {
     refetchInterval: 5000,
     refetchIntervalInBackground: true,
   })
+  const rewardByDonor = new Map<string, SosReward>(
+    (rewards ?? []).map((reward: SosReward): [string, SosReward] => [reward.donor_id, reward]),
+  )
+  const pendingDonationCount = (responders ?? []).filter(responder => {
+    const status = rewardByDonor.get(responder.donor_id)?.status
+    return !status || status === 'awaiting_choice' || status === 'awaiting_donation'
+  }).length
+  const canComplete = responders !== undefined && rewards !== undefined && pendingDonationCount === 0
 
-  const refreshRewards = () => queryClient.invalidateQueries({ queryKey: ['sos-rewards', eventId] })
-  const selectRewardRecipients = useMutation({
-    mutationFn: (primaryDonorId: string) => api.selectSosRewardRecipients(eventId!, primaryDonorId),
-    onSuccess: refreshRewards,
+  const refreshRewardData = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['sos-rewards', eventId] }),
+      queryClient.invalidateQueries({ queryKey: ['sos-responders', eventId] }),
+      queryClient.invalidateQueries({ queryKey: ['sos-event-history'] }),
+    ])
+  }
+  const confirmDonation = useMutation({
+    mutationFn: (args: { donorId: string; donated: boolean }) =>
+      api.confirmSosDonation(eventId!, args.donorId, args.donated),
+    onSuccess: refreshRewardData,
   })
   const chooseBackup = useMutation({
     mutationFn: (args: { donorId: string; choice: 'continue' | 'decline' }) =>
       api.chooseSosBackup(eventId!, args.donorId, args.choice),
-    onSuccess: refreshRewards,
-  })
-  const confirmDonation = useMutation({
-    mutationFn: (donorId: string) => api.confirmSosDonation(eventId!, donorId),
-    onSuccess: refreshRewards,
+    onSuccess: refreshRewardData,
   })
 
-  // Danh sách lời kêu gọi ĐANG MỞ của toàn cụm.
-  //
-  // Trước đây trang này chỉ biết tới sự kiện do chính phiên trình duyệt này mở:
-  // `eventId` nằm trong state, nên tải lại trang là mất dấu. Người trực mở SOS
-  // rồi đóng tab — hoặc đổi ca — thì không còn đường nào quay lại xem ai đã nhận
-  // lời, dù dữ liệu vẫn nằm nguyên trên máy chủ. Endpoint `/sos/events` đã có sẵn
-  // từ trước nhưng chỉ trang Bản đồ dùng.
-  const { data: openEvents } = useQuery({
-    queryKey: ['sos-open-events'],
-    queryFn: () => api.listOpenSosEvents(),
+  const complete = useMutation({
+    mutationFn: () => api.completeSosEvent(eventId!),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['sos-event', eventId] }),
+        queryClient.invalidateQueries({ queryKey: ['sos-event-history'] }),
+        queryClient.invalidateQueries({ queryKey: ['sos-responders', eventId] }),
+        queryClient.invalidateQueries({ queryKey: ['sos-rewards', eventId] }),
+      ])
+    },
+  })
+
+  // Recent event history includes fulfilled SOS events so accepted donors stay
+  // visible to admins long enough to verify the actual donation.
+  const { data: sosEvents } = useQuery({
+    queryKey: ['sos-event-history'],
+    queryFn: api.listSosEvents,
     refetchInterval: 15000,
     refetchIntervalInBackground: true,
   })
+
+  useEffect(() => {
+    if (eventId || trackingDismissed || !sosEvents?.length) return
+    const latestTrackable = sosEvents.find(ev => ['open', 'fulfilled', 'expired'].includes(ev.status))
+    if (!latestTrackable) return
+    setEventId(latestTrackable.id)
+    setRing(latestTrackable.ring)
+  }, [eventId, sosEvents, trackingDismissed])
+
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    if (eventId) url.searchParams.set('eventId', eventId)
+    else url.searchParams.delete('eventId')
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+  }, [eventId])
 
   const activeRing = event?.ring ?? (eventId ? ring : null)
 
@@ -211,12 +262,12 @@ export default function SOS() {
         )}
       </div>
 
-      {/* Lời kêu gọi đang mở của cả cụm — kể cả do phiên khác mở */}
-      {openEvents && openEvents.length > 0 && (
+      {/* Recent SOS calls remain available after fulfillment for donation verification. */}
+      {sosEvents && sosEvents.length > 0 && (
         <div className="card">
-          <h3 style={{ marginBottom: 4 }}>Đang mở trong cụm ({openEvents.length})</h3>
+          <h3 style={{ marginBottom: 4 }}>SOS gần đây trong cụm ({sosEvents.length})</h3>
           <p style={{ fontSize: 12.5, color: 'var(--bb-gray-500)', marginTop: 0, marginBottom: 12 }}>
-            Kể cả lời kêu gọi do ca trực trước hoặc cơ sở khác mở. Bấm để theo dõi.
+            Bao gồm ca đang phát và ca đã đủ người nhận lời để cơ sở xác nhận kết quả hiến.
           </p>
           <div className="table-wrap">
             <table>
@@ -226,12 +277,13 @@ export default function SOS() {
                   <th>Mức khẩn</th>
                   <th>Vòng</th>
                   <th>Đã nhận lời</th>
+                  <th>Trạng thái</th>
                   <th>Mã sự kiện</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                {openEvents.map(ev => (
+                {sosEvents.map(ev => (
                   <tr key={ev.id} style={ev.id === eventId ? { background: 'var(--bb-red-soft, #fef2f2)' } : undefined}>
                     <td style={{ fontWeight: 600 }}>
                       {ev.abo ?? '?'}{ev.rh ?? ''} ·{' '}
@@ -246,12 +298,13 @@ export default function SOS() {
                     <td style={{ fontFamily: 'var(--font-mono)' }}>
                       {ev.accept_count}/{ev.target_count}
                     </td>
+                    <td>{ev.status === 'open' ? 'Đang phát' : ev.status === 'fulfilled' ? 'Đã đủ người' : ev.status === 'expired' ? 'Hết hạn' : ev.status}</td>
                     <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
                       {ev.id.slice(0, 8)}…
                     </td>
                     <td>
                       <button className="btn" style={{ fontSize: 12, padding: '4px 12px' }}
-                              onClick={() => { setEventId(ev.id); setRing(ev.ring) }}>
+                              onClick={() => followEvent(ev.id, ev.ring)}>
                         {ev.id === eventId ? 'Đang xem' : 'Theo dõi'}
                       </button>
                     </td>
@@ -263,15 +316,42 @@ export default function SOS() {
         </div>
       )}
 
-      {/* Trạng thái lời kêu gọi đang mở */}
+      {trackingDismissed && !eventId && (
+        <div className="card" role="status">
+          Đã dừng theo dõi chi tiết. Các ca SOS vẫn tiếp tục hoạt động; chọn “Theo dõi” trong danh sách khi cần mở lại.
+        </div>
+      )}
+
+      {/* SOS details and verified donor outcomes */}
       {eventId && (
         <div className="card" style={{ borderLeft: '3px solid var(--bb-red)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3>Lời kêu gọi đang mở</h3>
-            <span className={`badge ${event?.status === 'fulfilled' ? 'badge-normal' : 'badge-urgent'}`}>
-              {event?.status === 'fulfilled' ? 'Đã đủ người' : 'Đang chờ'}
-            </span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <h3>{event?.status === 'completed' ? 'Ca SOS đã hoàn tất' : event?.status === 'fulfilled' ? 'SOS đã đủ người nhận lời' : 'Chi tiết SOS'}</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span className={`badge ${['fulfilled', 'completed'].includes(event?.status ?? '') ? 'badge-normal' : 'badge-urgent'}`}>
+                {event?.status === 'fulfilled' ? 'Đã đủ người' : event?.status === 'completed' ? 'Đã hoàn tất' : event?.status === 'expired' ? 'Đã hết hạn' : event?.status === 'cancelled' ? 'Đã hủy' : event?.status === 'open' ? 'Đang chờ' : event?.status ?? 'Đang tải'}
+              </span>
+              {event && !['completed', 'cancelled'].includes(event.status) &&
+                (session?.role === 'admin' || (!!event.facility_id && session?.facilityId === event.facility_id)) && (
+                  <button
+                    className="btn btn-danger"
+                    type="button"
+                    disabled={complete.isPending || !canComplete}
+                    onClick={() => complete.mutate()}
+                  >
+                    {complete.isPending ? 'Đang hoàn tất…' : 'Hoàn tất ca'}
+                  </button>
+                )}
+              <button className="btn btn-secondary" type="button" onClick={stopTracking}>Tắt theo dõi</button>
+            </div>
           </div>
+
+          {complete.error && <p role="alert" style={{ color: 'var(--bb-red)' }}>{complete.error.message}</p>}
+          {event && !['completed', 'cancelled'].includes(event.status) && !canComplete && (
+            <p role="status" style={{ color: 'var(--text-muted)', fontSize: 12.5 }}>
+              Còn {pendingDonationCount} người cần xác nhận kết quả hiến trước khi hoàn tất ca.
+            </p>
+          )}
 
           <div className="stat-grid" style={{ marginTop: 14 }}>
             <div className="stat-card">
@@ -303,7 +383,7 @@ export default function SOS() {
           )}
 
           <div style={{ display: 'flex', gap: 10, marginTop: 14, alignItems: 'center' }}>
-            {(event?.ring ?? ring) < 3 && event?.status !== 'fulfilled' && (
+            {(event?.ring ?? ring) < 3 && event?.status === 'open' && (
               <button className="btn btn-primary" disabled={escalate.isPending}
                       onClick={() => escalate.mutate()}>
                 <ArrowUpRight size={15} />
@@ -337,11 +417,12 @@ export default function SOS() {
               <div className="table-wrap">
                 <table>
                   <thead>
-                    <tr><th>Mã người hiến</th><th>Nhóm máu</th><th>Liên hệ</th><th>Ghi chú</th><th>Lúc</th></tr>
+                    <tr><th>Mã người hiến</th><th>Nhóm máu</th><th>Liên hệ</th><th>Ghi chú</th><th>Nhận lời</th><th>Xác nhận hiến & quà demo</th></tr>
                   </thead>
                   <tbody>
-                    {responders.map((r: SosResponder) => (
-                      <tr key={r.donor_id}>
+                    {responders.map((r: SosResponder) => {
+                      const reward = rewardByDonor.get(r.donor_id)
+                      return <tr key={r.donor_id}>
                         <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{r.donor_id}</td>
                         <td style={{ fontWeight: 700 }}>{r.blood_type ?? '—'}</td>
                         <td>
@@ -355,17 +436,52 @@ export default function SOS() {
                                 Không chia sẻ số
                               </span>}
                         </td>
-                        <td style={{ fontSize: 12, color: 'var(--bb-gray-600)' }}>
-                          {r.contact_note ?? '—'}
-                        </td>
+                        <td style={{ fontSize: 12, color: 'var(--bb-gray-600)' }}>{r.contact_note ?? '—'}</td>
                         <td style={{ fontSize: 12, color: 'var(--bb-gray-500)' }}>
-                          {new Date(r.responded_at).toLocaleTimeString('vi-VN')}
+                          Đã đồng ý · {new Date(r.responded_at).toLocaleTimeString('vi-VN')}
+                        </td>
+                        <td style={{ minWidth: 230 }}>
+                          {!rewards ? <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Đang tải trạng thái…</span>
+                            : !reward || reward.status === 'awaiting_donation' ? (
+                              <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap' }}>
+                                <button className="btn btn-primary" disabled={confirmDonation.isPending || event?.status === 'cancelled'}
+                                  onClick={() => confirmDonation.mutate({ donorId: r.donor_id, donated: true })}>
+                                  Xác nhận đã hiến
+                                </button>
+                                <button className="btn btn-secondary" disabled={confirmDonation.isPending || event?.status === 'cancelled'}
+                                  onClick={() => confirmDonation.mutate({ donorId: r.donor_id, donated: false })}>
+                                  Chưa hoàn tất
+                                </button>
+                              </span>
+                            ) : reward.status === 'awaiting_choice' ? (
+                              <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap' }}>
+                                <button className="btn btn-secondary" disabled={chooseBackup.isPending || event?.status === 'cancelled'}
+                                  onClick={() => chooseBackup.mutate({ donorId: r.donor_id, choice: 'continue' })}>
+                                  Tiếp tục
+                                </button>
+                                <button className="btn btn-secondary" disabled={chooseBackup.isPending || event?.status === 'cancelled'}
+                                  onClick={() => chooseBackup.mutate({ donorId: r.donor_id, choice: 'decline' })}>
+                                  Dừng
+                                </button>
+                              </span>
+                            ) : reward.status === 'mock_ready' ? (
+                              <span style={{ color: 'var(--bb-green)', fontSize: 12 }}>
+                                Đã xác nhận · quà demo {reward.proposed_amount_vnd?.toLocaleString('vi-VN')}đ
+                              </span>
+                            ) : reward.status === 'compensation_proposed' ? (
+                              <span style={{ fontSize: 12 }}>Đã dừng · quà bù demo</span>
+                            ) : <span style={{ fontSize: 12 }}>Chưa hoàn tất hiến</span>}
                         </td>
                       </tr>
-                    ))}
+                    })}
                   </tbody>
                 </table>
               </div>
+              {(chooseBackup.isError || confirmDonation.isError) && (
+                <p role="alert" style={{ color: 'var(--bb-red)', fontSize: 12 }}>
+                  {(chooseBackup.error ?? confirmDonation.error)?.message}
+                </p>
+              )}
               {/* Câu chú thích phải nằm trong MỘT <span>.
                   Thẻ bọc là flex container, nên nếu để text trần cạnh <strong> thì mỗi
                   mảnh trở thành một flex item riêng: câu bị xé thành ba cột và dấu chấm
@@ -380,104 +496,6 @@ export default function SOS() {
                 </span>
               </p>
             </div>
-          )}
-
-          {/* Nhật ký ghi vết: ai đã được gọi, vòng nào */}
-          {eventId && (
-            <section style={{ marginTop: 20, borderTop: '1px solid var(--bb-gray-200)', paddingTop: 16 }}>
-              <h4 style={{ marginBottom: 6 }}>Phương án cảm ơn người hiến — mô phỏng</h4>
-              <p style={{ fontSize: 12, color: 'var(--bb-gray-600)', lineHeight: 1.6, marginTop: 0 }}>
-                Khi đủ 6 người nhận lời, chọn 1 người chính (đề xuất 100.000đ sau khi cơ sở xác nhận hiến).
-                Những người còn lại có thể tiếp tục làm dự bị (80.000đ sau xác nhận hiến) hoặc xin dừng
-                (đề xuất 30.000đ). Lời nhắn xuất hiện trong hộp thư BB-SOS; voucher thật chưa được phát.
-                Mỗi SOS gọi tối đa 10 người. Việc chọn cuối cùng đủ điều kiện hiến vẫn do cơ sở y tế quyết định.
-              </p>
-
-              {(!rewards || rewards.length === 0) && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontSize: 13, color: 'var(--bb-gray-600)' }}>
-                    {responders?.length ?? 0}/6 người nhận lời tối thiểu
-                  </span>
-                  <select
-                    aria-label="Chọn người hiến chính"
-                    value={primaryDonorId}
-                    disabled={(responders?.length ?? 0) < 6 || selectRewardRecipients.isPending}
-                    onChange={e => setPrimaryDonorId(e.target.value)}
-                    style={{ minWidth: 220 }}
-                  >
-                    <option value="">Chọn người chính…</option>
-                    {(responders ?? []).map(r => (
-                      <option key={r.donor_id} value={r.donor_id}>{r.donor_id} · {r.blood_type ?? '—'}</option>
-                    ))}
-                  </select>
-                  <button className="btn btn-primary"
-                    disabled={!primaryDonorId || (responders?.length ?? 0) < 6 || selectRewardRecipients.isPending}
-                    onClick={() => selectRewardRecipients.mutate(primaryDonorId)}>
-                    Chốt người chính
-                  </button>
-                  {selectRewardRecipients.isPending && <span style={{ fontSize: 12 }}>Đang lập phương án…</span>}
-                  {selectRewardRecipients.isError && (
-                    <span role="alert" style={{ color: 'var(--bb-red)', fontSize: 12 }}>
-                      {selectRewardRecipients.error.message}
-                    </span>
-                  )}
-                </div>
-              )}
-
-              {!!rewards?.length && (
-                <div className="table-wrap" style={{ marginTop: 12 }}>
-                  <table>
-                    <thead>
-                      <tr><th>Người hiến</th><th>Vai trò</th><th>Trạng thái</th><th>Quà đề xuất</th><th>Thao tác</th></tr>
-                    </thead>
-                    <tbody>
-                      {rewards.map((reward: SosReward) => {
-                        const statusLabel = {
-                          awaiting_donation: 'Chờ cơ sở xác nhận hiến',
-                          awaiting_choice: 'Chờ chọn tiếp tục / xin dừng',
-                          compensation_proposed: 'Đề xuất bù phiền (mô phỏng)',
-                          mock_ready: 'Đủ điều kiện quà (mô phỏng)',
-                          not_completed: 'Chưa ghi nhận hoàn tất',
-                        }[reward.status]
-                        return (
-                          <tr key={reward.id}>
-                            <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{reward.donor_id}</td>
-                            <td>{reward.role === 'primary' ? 'Người chính' : 'Dự bị'}</td>
-                            <td>{statusLabel}</td>
-                            <td>{reward.proposed_amount_vnd == null ? '—' : `${reward.proposed_amount_vnd.toLocaleString('vi-VN')}đ`}</td>
-                            <td style={{ whiteSpace: 'nowrap' }}>
-                              {reward.status === 'awaiting_choice' && (
-                                <span style={{ display: 'inline-flex', gap: 6 }}>
-                                  <button className="btn" disabled={chooseBackup.isPending}
-                                    onClick={() => chooseBackup.mutate({ donorId: reward.donor_id, choice: 'continue' })}>
-                                    Tiếp tục dự bị
-                                  </button>
-                                  <button className="btn" disabled={chooseBackup.isPending}
-                                    onClick={() => chooseBackup.mutate({ donorId: reward.donor_id, choice: 'decline' })}>
-                                    Xin dừng
-                                  </button>
-                                </span>
-                              )}
-                              {reward.status === 'awaiting_donation' && (
-                                <button className="btn btn-primary" disabled={confirmDonation.isPending}
-                                  onClick={() => confirmDonation.mutate(reward.donor_id)}>
-                                  Cơ sở xác nhận đã hiến
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                  {(chooseBackup.isError || confirmDonation.isError) && (
-                    <p role="alert" style={{ color: 'var(--bb-red)', fontSize: 12 }}>
-                      {(chooseBackup.error ?? confirmDonation.error)?.message}
-                    </p>
-                  )}
-                </div>
-              )}
-            </section>
           )}
 
           {notifications && notifications.length > 0 && (

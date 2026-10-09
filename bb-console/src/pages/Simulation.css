@@ -1,0 +1,78 @@
+.sim-page {
+  min-height: 100vh;
+  padding: 28px clamp(16px, 4vw, 52px) 56px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.sim-container { width: min(1080px, 100%); margin: 0 auto; }
+.sim-topbar, .sim-heading, .sim-offer-head, .sim-offer-actions, .sim-event-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+}
+.sim-topbar { margin-bottom: 34px; }
+.sim-brand { color: var(--text); text-decoration: none; font-size: 13px; font-weight: 800; letter-spacing: .08em; }
+.sim-local-pill, .sim-tag {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px;
+  border-radius: 999px; background: var(--bb-blue-soft); color: var(--bb-blue);
+  font-size: 11px; font-weight: 700; letter-spacing: .04em;
+}
+.sim-heading { align-items: flex-start; margin-bottom: 24px; }
+.sim-heading h1 { margin: 4px 0 8px; font-size: clamp(26px, 4vw, 36px); letter-spacing: -.04em; }
+.sim-heading p { margin: 0; color: var(--text-muted); font-size: 14px; }
+.sim-icon-box { display: grid; place-items: center; width: 50px; height: 50px; flex: 0 0 auto; border-radius: 15px; background: var(--bb-red-soft); color: var(--bb-red); }
+.sim-controls { display: grid; grid-template-columns: minmax(260px, 1fr) auto; gap: 14px; align-items: end; }
+.sim-controls .form-group { margin: 0; }
+.sim-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+.sim-metric { padding: 15px 17px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.sim-metric strong { display: block; font-size: 24px; letter-spacing: -.03em; }
+.sim-metric span { color: var(--text-muted); font-size: 11px; }
+.sim-offer-list { display: grid; gap: 12px; }
+.sim-offer { padding: 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
+.sim-offer-head { align-items: flex-start; }
+.sim-offer h2, .sim-card-title { margin: 0 0 5px; font-size: 16px; }
+.sim-offer p { margin: 0; color: var(--text-muted); font-size: 12px; }
+.sim-offer-meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 16px 0; color: var(--text-muted); font-size: 12px; }
+.sim-stock-red { color: #b42318; background: #fee4e2; }
+.sim-stock-yellow { color: #92400e; background: #fef3c7; }
+.sim-stock-green { color: #047857; background: #d1fae5; }
+.sim-offer-actions { justify-content: flex-start; flex-wrap: wrap; }
+.sim-button-accept { background: #047857; color: #fff; }
+.sim-button-accept:hover:not(:disabled) { background: #065f46; }
+.sim-notice { display: flex; align-items: flex-start; gap: 10px; padding: 13px 15px; margin: 14px 0; border-radius: 10px; font-size: 13px; }
+.sim-notice-success { background: var(--bb-green-soft); color: var(--bb-green); }
+.sim-notice-error { background: var(--bb-red-soft); color: var(--bb-red); }
+.sim-empty { padding: 44px 20px; text-align: center; }
+.sim-empty svg { color: var(--text-faint); }
+.sim-empty h2 { margin: 10px 0 6px; font-size: 16px; }
+.sim-empty p { max-width: 460px; margin: 0 auto; color: var(--text-muted); font-size: 13px; }
+.sim-footer { display: flex; flex-wrap: wrap; gap: 10px 18px; margin-top: 24px; color: var(--text-muted); font-size: 12px; }
+.sim-footer a { color: var(--bb-blue); font-weight: 650; }
+.sim-ring-list { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 18px 0; }
+.sim-ring { padding: 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text-muted); font-size: 12px; }
+.sim-ring strong { display: block; color: var(--text); }
+.sim-ring-active { border-color: var(--bb-red); box-shadow: 0 0 0 2px var(--bb-red-soft); }
+.sim-voucher-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.sim-voucher { min-height: 74px; justify-content: flex-start; }
+.sim-voucher-selected { outline: 2px solid var(--bb-green); outline-offset: 1px; }
+.sim-code { margin-top: 12px; padding: 12px; border: 1px dashed var(--border-strong); border-radius: 9px; font-family: var(--font-mono); font-weight: 700; letter-spacing: .06em; }
+.sim-fineprint { color: var(--text-muted); font-size: 11px; line-height: 1.5; }
+.sim-profile-panel { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+.sim-profile-panel p { margin: 0; }
+.sim-profile-id { max-width: 260px; overflow-wrap: anywhere; color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; }
+.sim-location-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+.sim-sos-backdrop { position: fixed; inset: 0; z-index: 1400; display: grid; place-items: center; padding: 20px; background: rgb(15 23 42 / 58%); }
+.sim-sos-dialog { width: min(520px, 100%); max-height: min(88vh, 720px); overflow: auto; padding: 24px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); box-shadow: 0 24px 80px rgb(15 23 42 / 28%); }
+.sim-sos-dialog:focus { outline: 3px solid var(--bb-blue); outline-offset: 3px; }
+.sim-sos-dialog h2 { margin: 16px 0 8px; font-size: 22px; line-height: 1.25; }
+.sim-sos-dialog p { margin: 0 0 18px; color: var(--text-muted); font-size: 13px; line-height: 1.6; }
+
+@media (max-width: 680px) {
+  .sim-page { padding-inline: 14px; }
+  .sim-controls { grid-template-columns: 1fr; }
+  .sim-metrics { grid-template-columns: 1fr; }
+  .sim-ring-list { grid-template-columns: repeat(2, 1fr); }
+  .sim-voucher-grid { grid-template-columns: 1fr; }
+  .sim-offer-head { flex-direction: column; }
+  .sim-profile-panel { grid-template-columns: 1fr; align-items: stretch; }
+  .sim-sos-dialog { padding: 18px; }
+}

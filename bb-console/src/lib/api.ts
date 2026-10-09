@@ -3,7 +3,7 @@
  * All endpoints match the FastAPI router definitions.
  */
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api';
 
 // ── Token ──────────────────────────────────────────────────────
 // Mọi endpoint trừ /health, /spec-summary, /auth/login và /donors/register đều
@@ -28,15 +28,20 @@ export const AUTH_EXPIRED_EVENT = 'bb:auth-expired';
 
 async function fetchJSON<T>(path: string, opts?: RequestInit): Promise<T> {
   const token = getToken();
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      'Bypass-Tunnel-Reminder': 'true',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...opts?.headers,
-    },
-    ...opts,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Bypass-Tunnel-Reminder': 'true',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...opts?.headers,
+      },
+      ...opts,
+    });
+  } catch {
+    throw new Error(`Không kết nối được backend tại ${API_BASE}. Hãy mở bb-core local ở cổng 8000 và dùng console local.`);
+  }
   if (!res.ok) {
     if (res.status === 401) {
       clearToken();
@@ -198,6 +203,21 @@ export interface SosResponder {
   responded_at: string;
   contact_phone: string | null;
   contact_note: string | null;
+  location_sharing_consented?: boolean | null;
+}
+
+/** Aggregate location of donors who accepted an SOS; no donor ID or contact details. */
+export interface AcceptedDonorCell {
+  h3_cell: string;
+  lat: number;
+  lon: number;
+  count: number;
+}
+
+export interface SharedResponderLocation {
+  latitude: number;
+  longitude: number;
+  shared_at: string;
 }
 
 export interface SosReward {
@@ -517,7 +537,30 @@ export const api = {
     body: JSON.stringify(data),
   }),
 
+  respondToSosEvent: (eventId: string, data: {
+    donor_id: string;
+    outcome: 'accepted' | 'declined';
+    share_location?: boolean;
+    latitude?: number;
+    longitude?: number;
+  }) => fetchJSON<{
+    status: string;
+    event_id: string;
+    donor_id: string;
+    outcome: 'accepted' | 'declined' | 'no_show';
+    accept_count: number;
+    target_count: number;
+    event_status: string;
+    location_sharing_consented: boolean | null;
+  }>(`/sos/event/${eventId}/respond`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+
   getSosEvent: (eventId: string) => fetchJSON<SosEvent>(`/sos/event/${eventId}`),
+
+  completeSosEvent: (eventId: string) =>
+    fetchJSON<SosEvent>(`/sos/event/${eventId}/complete`, { method: 'POST' }),
 
   /** Nâng vòng trên CHÍNH sự kiện đó — không tạo sự kiện mới, không gọi lại
    *  người đã được gọi ở vòng trước. */
@@ -528,8 +571,14 @@ export const api = {
     fetchJSON<SosNotification[]>(`/sos/event/${eventId}/notifications`),
 
   /** Mỗi lần gọi để lại một dòng trong nhật ký ghi vết. */
-  listSosResponders: (eventId: string) =>
-    fetchJSON<SosResponder[]>(`/sos/event/${eventId}/responses`),
+    listSosResponders: (eventId: string) =>
+      fetchJSON<SosResponder[]>(`/sos/event/${eventId}/responses`),
+
+    /// Vị trí H3 tổng hợp của người hiến đã nhận lời; không trả mã hay thông tin liên hệ.
+    listAcceptedDonorCells: () => fetchJSON<AcceptedDonorCell[]>('/sos/responders/map'),
+
+  listSosResponderLocations: (eventId: string) =>
+    fetchJSON<SharedResponderLocation[]>(`/sos/event/${eventId}/locations`),
 
   listSosRewards: (eventId: string) =>
     fetchJSON<SosReward[]>(`/sos/event/${eventId}/rewards`),
@@ -565,6 +614,9 @@ export const api = {
 
   /// Danh sách SOS đang mở — để chấm nhu cầu lên bản đồ.
   listOpenSosEvents: () => fetchJSON<SosEvent[]>('/sos/events?status=open'),
+
+  /// Các ca SOS mới nhất, gồm cả ca đã đủ người để admin xác nhận hiến.
+  listSosEvents: () => fetchJSON<SosEvent[]>('/sos/events?limit=50'),
 
   // Nhật ký ghi vết (P4) — CHỈ vai trò admin đọc được.
   listAudit: (opts: { action?: string; actor?: string; limit?: number } = {}) => {

@@ -371,9 +371,11 @@ class SOSEvent(Base):
     component_code = Column(String, nullable=True)   # WB | RBC | PLT | FFP | CRYO
     abo            = Column(String, nullable=True)   # nhóm máu người bệnh cần
     rh             = Column(String, nullable=True)
+    recipient_sex  = Column(String(1), nullable=True)
+    recipient_age  = Column(Integer, nullable=True)
     urgency        = Column(String, nullable=True)   # routine | urgent | emergency
     h3_cell        = Column(String, nullable=True)   # ô lưới H3 của cơ sở phát yêu cầu
-    status         = Column(String, nullable=False, default="open")  # open|fulfilled|cancelled
+    status         = Column(String, nullable=False, default="open")  # open|fulfilled|expired|cancelled|completed
 
     responses = relationship("SOSResponse", back_populates="event")
 
@@ -392,6 +394,11 @@ class SOSResponse(Base):
     # bước đó. Máy chủ không có sẵn số điện thoại của ai để mà lộ.
     contact_phone = Column(String, nullable=True)
     contact_note  = Column(String, nullable=True)   # "sau 18h", "đang trên đường"...
+    location_cell = Column(String, nullable=True)   # coarse H3, only after explicit consent
+    location_latitude = Column(Float, nullable=True)
+    location_longitude = Column(Float, nullable=True)
+    location_sharing_consented = Column(Boolean, nullable=True)
+    location_shared_at = Column(DateTime(timezone=True), nullable=True)
 
     # Vế đối của SOSEvent.responses. Thiếu quan hệ này thì SQLAlchemy không cấu
     # hình được mapper và MỌI truy vấn ORM đều hỏng ngay lần gọi đầu tiên.

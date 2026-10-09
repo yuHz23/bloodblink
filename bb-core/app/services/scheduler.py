@@ -16,7 +16,6 @@ lẽ ra đã phải leo thang lúc máy chủ đang tắt.
 from __future__ import annotations
 
 import logging
-import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
@@ -26,12 +25,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import async_session
-from app.models.database import (
-    SOSEvent, TransferOffer, TransferOrder, TransferRequest, TransferState,
-)
+from app.models.database import SOSNotification, SOSEvent, SOSResponse, TransferOffer, TransferRequest, TransferState
 from app.services.sos_dispatch import escalate_event
-from app.services.sos_dispatch import dispatch_ring, facility_cell
-from app.services import audit
+from app.services.transfer_sos import start_sos_if_transfer_exhausted
 
 log = logging.getLogger("bb-core.scheduler")
 
@@ -68,6 +64,20 @@ async def escalate_due_events(session: Optional[AsyncSession] = None) -> int:
 
     try:
         now = datetime.now(timezone.utc)
+        stale_shares = (await db.execute(
+            select(SOSResponse).where(
+                SOSResponse.location_shared_at < now - timedelta(hours=4),
+                SOSResponse.location_latitude.is_not(None),
+            )
+        )).scalars().all()
+        for response in stale_shares:
+            response.location_cell = None
+            response.location_latitude = None
+            response.location_longitude = None
+            response.location_shared_at = None
+        if stale_shares:
+            await db.commit()
+
         ttl_cutoff = now - timedelta(minutes=settings.sos_event_ttl_minutes)
 
         events = (await db.execute(
@@ -92,10 +102,46 @@ async def escalate_due_events(session: Optional[AsyncSession] = None) -> int:
 
             target = due_ring(opened, now)
             while event.ring < target:
+                previous_ring = event.ring
                 result = await escalate_event(db, event)
+                if event.status != "open" or event.ring <= previous_ring:
+                    break
                 escalations += 1
                 log.info("SOS %s tự lên vòng %d: gọi thêm %d người (%d người đã gọi trước đó)",
                          event.id, result.ring, result.notified, result.already_notified)
+                if event.ring >= 3 and result.notified == 0:
+                    event.status = "expired"
+                    for response in (await db.execute(
+                        select(SOSResponse).where(SOSResponse.sos_event_id == event.id)
+                    )).scalars().all():
+                        response.location_cell = None
+                        response.location_latitude = None
+                        response.location_longitude = None
+                        response.location_shared_at = None
+                    await db.commit()
+                    break
+
+            if event.status == "open" and event.ring >= 3:
+                latest_final_invitation = await db.scalar(
+                    select(func.max(SOSNotification.created_at)).where(
+                        SOSNotification.sos_event_id == event.id,
+                        SOSNotification.ring == 3,
+                    )
+                )
+                final_invitation_at = latest_final_invitation or opened
+                if final_invitation_at.tzinfo is None:
+                    final_invitation_at = final_invitation_at.replace(tzinfo=timezone.utc)
+                if now - final_invitation_at >= timedelta(minutes=10):
+                    event.status = "expired"
+                    for response in (await db.execute(
+                        select(SOSResponse).where(SOSResponse.sos_event_id == event.id)
+                    )).scalars().all():
+                        response.location_cell = None
+                        response.location_latitude = None
+                        response.location_longitude = None
+                        response.location_shared_at = None
+                    await db.commit()
+                    log.info("SOS %s hết hạn sau vòng cuối mà chưa đủ người nhận lời", event.id)
     finally:
         if own_session:
             await db.close()
@@ -104,7 +150,7 @@ async def escalate_due_events(session: Optional[AsyncSession] = None) -> int:
 
 
 async def dispatch_unanswered_transfer_requests(session: Optional[AsyncSession] = None) -> int:
-    """Start donor SOS when every ranked hospital offer declined or timed out."""
+    """Reconcile donor SOS as hospital offers expire or become exhausted."""
     own_session = session is None
     db = session or async_session()
     started = 0
@@ -136,66 +182,25 @@ async def dispatch_unanswered_transfer_requests(session: Optional[AsyncSession] 
             if expired_any:
                 await db.flush()
 
-            allocated = int(await db.scalar(
-                select(func.count(TransferOrder.id)).where(
-                    TransferOrder.request_id == request.id,
-                    TransferOrder.state != TransferState.CANCELLED,
-                )
-            ) or 0)
-            if allocated >= request.qty:
-                request.state = TransferState.APPROVED
-                for offer in offers:
-                    if offer.status == "pending":
-                        offer.status = "cancelled"
-                        offer.responded_at = now
-                        offer.response_note = "Nơi nhận đã đủ số lượng"
+            has_pending = any(offer.status == "pending" for offer in offers)
+            if expired_any:
                 await db.commit()
-                continue
 
-            if any(offer.status == "pending" for offer in offers):
-                if expired_any:
-                    await db.commit()
-                continue
+            # Reconcile when an offer expires even if other hospitals are still
+            # considering the request. The helper starts SOS only for capacity
+            # that the remaining pending offers cannot cover.
+            if expired_any or not has_pending:
+                existing_event = await db.scalar(
+                    select(SOSEvent.id).where(SOSEvent.request_id == request.id).limit(1)
+                )
+                event = await start_sos_if_transfer_exhausted(db, request.id)
+                if event and not existing_event:
+                    started += 1
+                    log.info("Transfer request %s: donor SOS started for uncovered hospital capacity",
+                             request.id)
 
-            # Prevent duplicate SOS if a coordinator already started one.
-            existing_event = await db.scalar(
-                select(SOSEvent.id).where(SOSEvent.request_id == request.id).limit(1)
-            )
-            if existing_event:
+            if has_pending:
                 continue
-
-            remaining = max(1, request.qty - allocated)
-            cell = await facility_cell(db, request.requester_facility_id)
-            event = SOSEvent(
-                id=str(uuid.uuid4()),
-                request_id=request.id,
-                ring=0,
-                opened_at=now,
-                target_count=remaining,
-                accept_count=0,
-                facility_id=request.requester_facility_id,
-                component_code=request.component_code.value,
-                abo=request.abo.value if request.abo else None,
-                rh=request.rh.value if request.rh else None,
-                urgency=request.urgency.value if request.urgency else "urgent",
-                h3_cell=cell,
-                status="open",
-            )
-            db.add(event)
-            await db.flush()
-            await audit.record(db, "system", audit.SOS_OPEN, {
-                "event_id": event.id,
-                "request_id": request.id,
-                "facility_id": request.requester_facility_id,
-                "reason": "transfer_offers_declined_or_expired",
-                "remaining_qty": remaining,
-                "ring": 0,
-            })
-            await db.commit()
-            await dispatch_ring(db, event)
-            started += 1
-            log.info("Transfer request %s: offers ended; donor SOS started for %d units",
-                     request.id, remaining)
     finally:
         if own_session:
             await db.close()

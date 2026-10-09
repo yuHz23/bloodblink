@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
+import { RefreshCw } from 'lucide-react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import {
   api, type Donor, type Facility, type FacilityStock, type MatchResponse,
-  type NearbyDonor, type SosEvent, type DensityCell, type TransferOffer,
+  type NearbyDonor, type SosEvent, type DensityCell, type TransferOffer, type AcceptedDonorCell,
 } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { COMPONENT_LABELS, URGENCY_LABELS } from '../lib/constants'
@@ -24,6 +26,43 @@ import { COMPONENT_LABELS, URGENCY_LABELS } from '../lib/constants'
 
 const ABO_OPTIONS = ['O', 'A', 'B', 'AB']
 const HCMC_CENTER: [number, number] = [10.776, 106.68]
+const DONOR_MARKER_PANE = 'donor-markers'
+const SOS_RING_START_MINUTES = [0, 10, 25, 45]
+const SOS_FINAL_RING_TIMEOUT_MS = 10 * 60_000
+
+function secondsUntilNextRing(event: SosEvent, now: number): number | null {
+  const nextRingStart = SOS_RING_START_MINUTES[event.ring + 1]
+  const openedAt = Date.parse(event.opened_at)
+  if (nextRingStart == null || !Number.isFinite(openedAt)) return null
+  return Math.max(0, Math.ceil((openedAt + nextRingStart * 60_000 - now) / 1000))
+}
+
+function secondsUntilFinalTimeout(
+  event: SosEvent,
+  notifications: { ring: number; created_at: string }[],
+  now: number,
+): number | null {
+  if (event.ring < 3) return null
+  const finalInvitations = notifications.filter(notification => notification.ring === 3)
+  const latestFinalInvitation = finalInvitations.reduce(
+    (latest, notification) => Math.max(latest, Date.parse(notification.created_at)),
+    Date.parse(event.opened_at),
+  )
+  if (!Number.isFinite(latestFinalInvitation)) return null
+  return Math.max(0, Math.ceil((latestFinalInvitation + SOS_FINAL_RING_TIMEOUT_MS - now) / 1000))
+}
+
+function formatCountdown(seconds: number): string {
+  const minutes = Math.floor(seconds / 60)
+  const remainder = seconds % 60
+  return `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
+}
+
+function metricFreshness(updatedAt: number, isFetching: boolean): string {
+  if (isFetching) return 'Đang cập nhật…'
+  if (!updatedAt) return 'Chưa có dữ liệu'
+  return `Cập nhật lúc ${new Date(updatedAt).toLocaleTimeString('vi-VN')}`
+}
 
 /** Màu theo mức tồn: đỏ = cạn, xanh = dồi dào. */
 function stockColor(count: number): string {
@@ -104,10 +143,12 @@ export default function MapView() {
   const [showStock, setShowStock] = useState(true)
   const [showDonors, setShowDonors] = useState(true)
   const [showSos, setShowSos] = useState(true)
+  const [mapReady, setMapReady] = useState(false)
   const [expandedDonorCell, setExpandedDonorCell] = useState<string | null>(null)
   const [selectedDonorId, setSelectedDonorId] = useState<string | null>(null)
   const [sourceId, setSourceId] = useState('')
   const [destinationId, setDestinationId] = useState('')
+  const [routeRequestVersion, setRouteRequestVersion] = useState(0)
   const [workflow, setWorkflow] = useState<'dispatch' | 'sos' | null>(null)
   const [matchQty, setMatchQty] = useState(1)
   const [matchUrgency, setMatchUrgency] = useState('urgent')
@@ -120,6 +161,7 @@ export default function MapView() {
   const [matchResult, setMatchResult] = useState<MatchResponse | null>(null)
   const [dispatchRun, setDispatchRun] = useState<{
     requestId: string
+    destinationFacilityId: string
     qty: number
     waitMinutes: number
     fastestEtaSeconds: number | null
@@ -128,8 +170,14 @@ export default function MapView() {
   const [clockNow, setClockNow] = useState(Date.now())
   const [sosQty, setSosQty] = useState(1)
   const [sosUrgency, setSosUrgency] = useState('emergency')
-  const [sosRing, setSosRing] = useState(0)
   const [openedSos, setOpenedSos] = useState<SosEvent | null>(null)
+  const [sosTrackingEnabled, setSosTrackingEnabled] = useState(() => {
+    try {
+      return typeof window === 'undefined' || window.localStorage.getItem('bb_map_sos_tracking') !== 'disabled'
+    } catch {
+      return true
+    }
+  })
 
   // Chủ đề đang hiển thị thật sự (đã giải quyết xong "theo hệ thống").
   const [dark, setDark] = useState(false)
@@ -150,27 +198,85 @@ export default function MapView() {
   const boxRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
   const layerRef = useRef<L.LayerGroup | null>(null)
+  const routeLayerRef = useRef<L.LayerGroup | null>(null)
+  const focusedResponderCells = useRef('')
 
-  const { data: facilities } = useQuery({
+  const facilitiesQuery = useQuery({
     queryKey: ['facilities'],
     queryFn: () => api.listFacilities(),
   })
+  const facilities = facilitiesQuery.data
 
-  const { data: stock } = useQuery({
+  const stockQuery = useQuery({
     queryKey: ['stock-by-facility', component],
     queryFn: () => api.inventoryByFacility(component),
     refetchInterval: 30000,
     refetchIntervalInBackground: true,
   })
+  const stock = stockQuery.data
 
-  const { data: events } = useQuery({
-    queryKey: ['open-sos'],
-    queryFn: () => api.listOpenSosEvents(),
-    refetchInterval: 10000,
+  const eventsQuery = useQuery({
+    queryKey: ['sos-events-map'],
+    queryFn: () => api.listSosEvents(),
+    refetchInterval: 3000,
+    refetchIntervalInBackground: true,
+  })
+  const events = eventsQuery.data
+  const openEventsQuery = useQuery({
+    queryKey: ['sos-open-events-map'],
+    queryFn: api.listOpenSosEvents,
+    refetchInterval: 3000,
+    refetchIntervalInBackground: true,
+  })
+  const activeSosEvents = useMemo(
+    () => openEventsQuery.isError
+      ? eventsQuery.isError ? [] : (events ?? []).filter(event => event.status === 'open')
+      : openEventsQuery.data ?? (events ?? []).filter(event => event.status === 'open'),
+    [openEventsQuery.data, openEventsQuery.isError, events, eventsQuery.isError],
+  )
+  const trackableSosEvents = useMemo(
+    () => eventsQuery.isError
+      ? []
+      : (events ?? []).filter(event => ['open', 'fulfilled', 'expired'].includes(event.status)),
+    [events, eventsQuery.isError],
+  )
+  const openedSosQuery = useQuery({
+    queryKey: ['map-sos-event-detail', openedSos?.id],
+    queryFn: () => api.getSosEvent(openedSos!.id),
+    enabled: !!openedSos?.id,
+    refetchInterval: 3000,
+    refetchIntervalInBackground: true,
+  })
+  const displayedOpenedSos = openedSosQuery.data ?? openedSos
+  const trackedSosEvent = useMemo(
+    () => sosTrackingEnabled
+      ? activeSosEvents.find(event => event.request_id === dispatchRun?.requestId)
+        ?? trackableSosEvents.find(event => event.request_id === dispatchRun?.requestId)
+        ?? activeSosEvents.find(event => !!event.request_id)
+        ?? activeSosEvents[0]
+        ?? trackableSosEvents.find(event => !!event.request_id)
+        ?? trackableSosEvents[0]
+      : undefined,
+    [activeSosEvents, trackableSosEvents, dispatchRun?.requestId, sosTrackingEnabled],
+  )
+  const trackedSosNotificationsQuery = useQuery({
+    queryKey: ['map-sos-notifications', trackedSosEvent?.id],
+    queryFn: () => api.listSosNotifications(trackedSosEvent!.id),
+    enabled: !!trackedSosEvent && trackedSosEvent.ring >= 3,
+    refetchInterval: 3000,
     refetchIntervalInBackground: true,
   })
 
-  const { data: density } = useQuery({
+  const stopSosTracking = () => {
+    setSosTrackingEnabled(false)
+    try { window.localStorage.setItem('bb_map_sos_tracking', 'disabled') } catch { /* Keep the current choice for this page. */ }
+  }
+  const resumeSosTracking = () => {
+    setSosTrackingEnabled(true)
+    try { window.localStorage.removeItem('bb_map_sos_tracking') } catch { /* Keep the current choice for this page. */ }
+  }
+
+  const densityQuery = useQuery({
     queryKey: ['donor-density', abo, rh],
     // Để nguyên ngưỡng k-ẩn danh mặc định của máy chủ (3). Hạ xuống 1 thì bản
     // đồ trông "đầy" hơn nhưng một ô chỉ có đúng một người là đủ để lần ra
@@ -180,11 +286,32 @@ export default function MapView() {
     refetchIntervalInBackground: true,
   })
 
+  const refreshMapStats = async () => {
+    await Promise.all([stockQuery.refetch(), openEventsQuery.refetch(), densityQuery.refetch()])
+  }
+  const statsRefreshing = stockQuery.isFetching || openEventsQuery.isFetching || densityQuery.isFetching
+
+  const acceptedDonorCellsQuery = useQuery({
+    queryKey: ['sos-accepted-donor-cells'],
+    queryFn: () => api.listAcceptedDonorCells(),
+    enabled: showDonors,
+    refetchInterval: 15000,
+    refetchIntervalInBackground: true,
+  })
+
+  const sharedResponderLocationsQuery = useQuery({
+    queryKey: ['sos-shared-locations', trackedSosEvent?.id],
+    queryFn: () => api.listSosResponderLocations(trackedSosEvent!.id),
+    enabled: showDonors && !!trackedSosEvent,
+    refetchInterval: 10000,
+    refetchIntervalInBackground: true,
+  })
+
   useEffect(() => {
-    if (!dispatchRun) return
+    if (!dispatchRun && activeSosEvents.length === 0) return
     const timer = window.setInterval(() => setClockNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
-  }, [dispatchRun])
+  }, [dispatchRun, activeSosEvents.length])
 
   useEffect(() => {
     if (!destinationId && facilities?.length) {
@@ -195,17 +322,66 @@ export default function MapView() {
   }, [destinationId, facilities, session?.facilityId])
 
   const destinationFacility = facilities?.find(f => f.id === destinationId)
+  const routeDestinationFacility = facilities?.find(f => f.id === dispatchRun?.destinationFacilityId) ?? destinationFacility
+  const trackedFacility = facilities?.find(f => f.id === trackedSosEvent?.facility_id)
   const sourceFacility = facilities?.find(f => f.id === sourceId)
   const { data: routeEta, isLoading: routeLoading, error: routeError } = useQuery({
-    queryKey: ['map-route', sourceId, destinationId],
+    queryKey: ['map-route', sourceId, routeDestinationFacility?.id, routeRequestVersion],
     queryFn: () => {
-      if (!sourceFacility || !destinationFacility) throw new Error('Chưa có tuyến điều chuyển để tính.')
-      return api.getEta(sourceFacility.lat, sourceFacility.lon, destinationFacility.lat, destinationFacility.lon)
+      if (!sourceFacility || !routeDestinationFacility) throw new Error('Chưa có tuyến điều chuyển để tính.')
+      return api.getEta(sourceFacility.lat, sourceFacility.lon, routeDestinationFacility.lat, routeDestinationFacility.lon)
     },
-    enabled: !!sourceFacility && !!destinationFacility && sourceId !== destinationId,
+    enabled: !!sourceFacility && !!routeDestinationFacility && sourceId !== routeDestinationFacility.id,
     refetchInterval: 60000,
     refetchIntervalInBackground: true,
   })
+  const sharedLocation = sharedResponderLocationsQuery.data?.[0]
+  const { data: pickupRoute } = useQuery({
+    queryKey: ['map-sos-pickup-route', trackedSosEvent?.id, sharedLocation?.latitude, sharedLocation?.longitude, trackedFacility?.id],
+    queryFn: () => api.getEta(
+      sharedLocation!.latitude,
+      sharedLocation!.longitude,
+      trackedFacility!.lat,
+      trackedFacility!.lon,
+    ),
+    enabled: showDonors && !!sharedLocation && !!trackedFacility,
+  })
+  useEffect(() => {
+    const map = mapRef.current
+    const routeLayer = routeLayerRef.current
+    if (!map || !routeLayer || !mapReady) return
+    routeLayer.clearLayers()
+    if (!routeEta?.geometry || routeEta.geometry.length < 2
+      || !['road', 'straight_line'].includes(routeEta.routing_mode)) return
+
+    const routePoints = routeEta.geometry.filter(([lat, lon]) => Number.isFinite(lat) && Number.isFinite(lon))
+    if (routePoints.length < 2) return
+    const isRoadRoute = routeEta.routing_mode === 'road'
+    const routeLabel = isRoadRoute ? 'Tuyến hỗ trợ liên viện' : 'Tuyến tham khảo đường thẳng'
+    const line = L.polyline(routePoints, {
+      color: isRoadRoute ? '#2563eb' : '#d97706',
+      weight: 5,
+      opacity: 0.95,
+      dashArray: isRoadRoute ? undefined : '10 8',
+    })
+      .bindPopup(`<b>${routeLabel}</b><br>${routeEta.duration_min.toFixed(1)} phút · ${(routeEta.distance_m / 1000).toFixed(1)} km · ${routeEta.provider}`)
+      .addTo(routeLayer)
+      .bringToFront()
+    const bounds = line.getBounds()
+    if (bounds.isValid()) map.fitBounds(bounds, { padding: [42, 42], maxZoom: 15 })
+  }, [routeEta, mapReady, sourceFacility?.id, routeDestinationFacility?.id])
+  useEffect(() => {
+    const cells = acceptedDonorCellsQuery.data ?? []
+    if (!mapReady || sourceId || cells.length === 0 || !mapRef.current) return
+    const key = cells.map(cell => cell.h3_cell).sort().join('|')
+    if (key === focusedResponderCells.current) return
+    focusedResponderCells.current = key
+    mapRef.current.fitBounds(
+      L.latLngBounds(cells.map(cell => [cell.lat, cell.lon] as [number, number])),
+      { padding: [42, 42], maxZoom: 12 },
+    )
+  }, [acceptedDonorCellsQuery.data, mapReady, sourceId])
+  const density = densityQuery.isError ? undefined : densityQuery.data
 
   const matchSearch = useMutation({
     mutationFn: async () => {
@@ -215,7 +391,7 @@ export default function MapView() {
         requester_facility_id: destinationFacility.id,
         component_code: component,
         abo,
-        rh,
+        rh: rh || undefined,
         qty: matchQty,
         urgency: matchUrgency,
         needed_by: new Date(neededBy).toISOString(),
@@ -238,14 +414,16 @@ export default function MapView() {
       setMatchResult(result)
       setDispatchRun({
         requestId: request.id,
+        destinationFacilityId: request.requester_facility_id,
         qty: matchQty,
         waitMinutes,
         fastestEtaSeconds,
         expiresAt: offers[0]?.expires_at ?? new Date(Date.now() + waitMinutes * 60000).toISOString(),
       })
-      const firstSourceId = offers.find(offer => offer.source_facility_id)?.source_facility_id
-      setSourceId(firstSourceId ?? '')
+      setSourceId('')
       await queryClient.invalidateQueries({ queryKey: ['stock-by-facility'] })
+      await queryClient.invalidateQueries({ queryKey: ['sos-events-map'] })
+      await queryClient.invalidateQueries({ queryKey: ['sos-open-events-map'] })
     },
   })
 
@@ -260,6 +438,7 @@ export default function MapView() {
   const { data: incomingOffers, error: incomingOffersError } = useQuery({
     queryKey: ['map-incoming-transfer-offers', session?.facilityId, session?.role],
     queryFn: () => api.listIncomingTransferOffers(session?.facilityId ?? undefined),
+    enabled: !!session?.facilityId,
     refetchInterval: 5000,
     refetchIntervalInBackground: true,
   })
@@ -271,6 +450,8 @@ export default function MapView() {
       await queryClient.invalidateQueries({ queryKey: ['map-incoming-transfer-offers'] })
       if (dispatchRun) await queryClient.invalidateQueries({ queryKey: ['map-transfer-offers', dispatchRun.requestId] })
       await queryClient.invalidateQueries({ queryKey: ['stock-by-facility'] })
+      await queryClient.invalidateQueries({ queryKey: ['sos-events-map'] })
+      await queryClient.invalidateQueries({ queryKey: ['sos-open-events-map'] })
     },
   })
 
@@ -292,12 +473,16 @@ export default function MapView() {
   })
 
   const openSos = useMutation({
-    mutationFn: () => {
+    mutationFn: (options: { requestId?: string; qty?: number; urgency?: string }) => {
       if (!destinationFacility) throw new Error('Chọn cơ sở phát SOS trên bản đồ trước.')
       return api.createSosEvent({
         facility_id: destinationFacility.id,
         component_code: component,
-        abo, rh, urgency: sosUrgency, qty: sosQty, ring: sosRing,
+        abo, rh: rh || undefined,
+        urgency: options.urgency ?? sosUrgency,
+        qty: options.qty ?? sosQty,
+        ring: 0,
+        request_id: options.requestId,
         h3_cell: destinationFacility.h3_cell ?? undefined,
       })
     },
@@ -305,14 +490,45 @@ export default function MapView() {
       setOpenedSos(event)
       await queryClient.invalidateQueries({ queryKey: ['open-sos'] })
       await queryClient.invalidateQueries({ queryKey: ['sos-open-events'] })
+      await queryClient.invalidateQueries({ queryKey: ['sos-events-map'] })
+      await queryClient.invalidateQueries({ queryKey: ['sos-open-events-map'] })
     },
   })
 
-  const linkedSos = events?.find(event => event.request_id === dispatchRun?.requestId)
+  const advanceSos = useMutation({
+    mutationFn: (eventId: string) => api.escalateSosEvent(eventId),
+    onSuccess: async event => {
+      setOpenedSos(event)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['open-sos'] }),
+        queryClient.invalidateQueries({ queryKey: ['sos-open-events'] }),
+        queryClient.invalidateQueries({ queryKey: ['sos-events-map'] }),
+        queryClient.invalidateQueries({ queryKey: ['sos-open-events-map'] }),
+      ])
+    },
+  })
+
+  const completeSos = useMutation({
+    mutationFn: (eventId: string) => api.completeSosEvent(eventId),
+    onSuccess: async (_event, eventId) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['sos-events-map'] }),
+        queryClient.invalidateQueries({ queryKey: ['sos-open-events-map'] }),
+        queryClient.invalidateQueries({ queryKey: ['sos-event-history'] }),
+        queryClient.invalidateQueries({ queryKey: ['map-sos-event-detail', eventId] }),
+      ])
+    },
+  })
+
+  const linkedSosFromList = events?.find(event => event.request_id === dispatchRun?.requestId)
+    ?? activeSosEvents.find(event => event.request_id === dispatchRun?.requestId)
+  const linkedSos = openedSosQuery.data?.request_id === dispatchRun?.requestId
+    ? openedSosQuery.data
+    : linkedSosFromList
   const acceptedQty = (transferOffers ?? [])
     .reduce((sum, offer) => sum + (offer.accepted_qty ?? 0), 0)
   const pendingOfferCount = (transferOffers ?? []).filter(offer => offer.status === 'pending').length
-  const allOffersFinished = !!transferOffers?.length && pendingOfferCount === 0
+  const allOffersFinished = transferOffers !== undefined && pendingOfferCount === 0
   const dispatchPhase = linkedSos
     ? 'sos'
     : dispatchRun && acceptedQty >= dispatchRun.qty
@@ -326,32 +542,38 @@ export default function MapView() {
 
   useEffect(() => {
     if (linkedSos) setOpenedSos(linkedSos)
-  }, [linkedSos?.id])
+  }, [linkedSos?.id, linkedSos?.status, linkedSos?.ring, linkedSos?.accept_count, linkedSos?.donors_notified])
 
-  const bloodType = `${abo}${rh}`
+  const bloodType = rh ? `${abo}${rh}` : `${abo} (RhD chưa rõ)`
 
   /** Tồn kho của nhóm máu đang chọn, gom theo cơ sở. */
   const stockByFacility = useMemo(() => {
     const m = new Map<string, number>()
+    if (stockQuery.isError) return m
     for (const r of (stock ?? []) as FacilityStock[]) {
-      if (r.blood_type !== bloodType) continue
+      if (r.abo !== abo || (rh && r.rh !== rh)) continue
       m.set(r.facility_id, (m.get(r.facility_id) ?? 0) + r.count)
     }
     return m
-  }, [stock, bloodType])
+  }, [stock, stockQuery.isError, abo, rh])
 
   // ── Dựng bản đồ một lần ────────────────────────────────────────
   useEffect(() => {
     if (mapRef.current || !boxRef.current) return
     const map = L.map(boxRef.current, { zoomControl: true }).setView(HCMC_CENTER, 12)
+    const donorPane = map.createPane(DONOR_MARKER_PANE)
+    donorPane.style.zIndex = '640'
+    donorPane.style.pointerEvents = 'auto'
     mapRef.current = map
     layerRef.current = L.layerGroup().addTo(map)
+    routeLayerRef.current = L.layerGroup().addTo(map)
+    setMapReady(true)
 
     // Leaflet đo khung ngay lúc dựng; nếu thẻ cha còn đang bố trí thì bản đồ
     // ra kích thước 0 và chỉ hiện một mảng xám.
     setTimeout(() => map.invalidateSize(), 0)
 
-    return () => { map.remove(); mapRef.current = null }
+    return () => { map.remove(); mapRef.current = null; layerRef.current = null; routeLayerRef.current = null }
   }, [])
 
   // ── Nền bản đồ ─────────────────────────────────────────────────
@@ -394,6 +616,7 @@ export default function MapView() {
           donorsInCell.forEach((donor, index) => {
             const point = representativeDonorPoint(cell, donor.donor_id)
             L.circleMarker(point, {
+              pane: DONOR_MARKER_PANE,
               radius: 5, color: '#fff', weight: 1.5, fillColor: '#7c3aed', fillOpacity: 0.95,
             })
               .bindPopup(
@@ -406,6 +629,7 @@ export default function MapView() {
           })
         } else {
           L.circleMarker([cell.lat, cell.lon], {
+            pane: DONOR_MARKER_PANE,
             radius: 8 + Math.min(Math.sqrt(cell.count) * 2, 13),
             color: '#fff', weight: 2, fillColor: '#7c3aed', fillOpacity: 0.92,
           })
@@ -415,8 +639,39 @@ export default function MapView() {
               const map = mapRef.current
               if (map) map.setView([cell.lat, cell.lon], Math.max(map.getZoom(), 14))
             })
-            .addTo(layer)
+          .addTo(layer)
         }
+      }
+
+      for (const cell of (acceptedDonorCellsQuery.data ?? []) as AcceptedDonorCell[]) {
+        L.circleMarker([cell.lat, cell.lon], {
+          pane: DONOR_MARKER_PANE,
+          radius: 10,
+          color: '#fff',
+          weight: 2,
+          fillColor: '#0891b2',
+          fillOpacity: 0.98,
+        })
+          .bindTooltip(`${cell.count} người hiến đã nhận lời · vùng H3`, { direction: 'top' })
+          .bindPopup('<b>Người hiến đã nhận lời</b><br>' +
+            `${cell.count} người trong ô H3 ~1 km<br>` +
+            '<small>Vị trí ô lưới đại diện, không phải GPS thời gian thực.</small>')
+          .addTo(layer)
+      }
+
+      for (const location of sharedResponderLocationsQuery.data ?? []) {
+        L.circleMarker([location.latitude, location.longitude], {
+          pane: DONOR_MARKER_PANE,
+          radius: 9,
+          color: '#fff',
+          weight: 2,
+          fillColor: '#0891b2',
+          fillOpacity: 1,
+        })
+          .bindTooltip('Người hiến đã chủ động chia sẻ vị trí', { direction: 'top' })
+          .bindPopup('<b>Vị trí đã được chia sẻ theo đồng ý</b><br>' +
+            '<small>Chỉ cơ sở phát lời mời SOS xem được; chia sẻ tự hết hạn sau 4 giờ hoặc có thể thu hồi.</small>')
+          .addTo(layer)
       }
     }
 
@@ -426,8 +681,8 @@ export default function MapView() {
         const count = stockByFacility.get(f.id) ?? 0
         L.circleMarker([f.lat, f.lon], {
           radius: 9 + Math.min(Math.sqrt(count), 13),
-          color: '#fff',
-          weight: 2,
+          color: f.id === destinationId ? '#1d4ed8' : '#fff',
+          weight: f.id === destinationId ? 4 : 2,
           fillColor: stockColor(count),
           fillOpacity: 0.92,
         })
@@ -435,8 +690,12 @@ export default function MapView() {
             `<b>${f.name}</b><br>` +
             `${bloodType} · ${COMPONENT_LABELS[component] ?? component}: ` +
             `<b>${count}</b> đơn vị — ${stockLabel(count)}<br>` +
-            `<small>Chỉ đếm đơn vị còn hạn.</small>`,
+            `<small>Chỉ đếm đơn vị còn hạn. Bấm ghim để chọn làm điểm nhận.</small>`,
           )
+          .on('click', () => {
+            setDestinationId(f.id)
+            setSourceId('')
+          })
           .addTo(layer)
       }
     }
@@ -449,7 +708,7 @@ export default function MapView() {
     // cũng không ổn — làm vậy là đặt ca vào chỗ nó không nằm ở đó.
     if (showSos) {
       const byFacility = new Map<string, SosEvent[]>()
-      for (const ev of (events ?? []) as SosEvent[]) {
+      for (const ev of activeSosEvents as SosEvent[]) {
         if (!ev.facility_id) continue
         const list = byFacility.get(ev.facility_id) ?? []
         list.push(ev)
@@ -492,18 +751,20 @@ export default function MapView() {
       }
     }
 
-    if (routeEta && sourceFacility && destinationFacility
-      && routeEta.routing_mode === 'road' && routeEta.geometry && routeEta.geometry.length > 1) {
-      const routePoints = routeEta.geometry
-      L.polyline(routePoints, {
-        color: '#2563eb',
+    const pickupGeometry = pickupRoute?.geometry
+    if (showDonors && pickupRoute && pickupGeometry && pickupGeometry.length > 1
+      && ['road', 'straight_line'].includes(pickupRoute.routing_mode)) {
+      const isRoadPickupRoute = pickupRoute.routing_mode === 'road'
+      L.polyline(pickupGeometry, {
+        color: isRoadPickupRoute ? '#0891b2' : '#d97706',
         weight: 4,
         opacity: 0.9,
+        dashArray: isRoadPickupRoute ? '8 6' : '10 8',
       })
-        .bindPopup(`<b>Tuyến hỗ trợ liên viện</b><br>${routeEta.duration_min.toFixed(1)} phút · ${(routeEta.distance_m / 1000).toFixed(1)} km · ${routeEta.provider}`)
+        .bindPopup(`<b>${isRoadPickupRoute ? 'Đường tới người hiến đã đồng ý chia sẻ' : 'Đường thẳng tham khảo tới người hiến'}</b><br>${pickupRoute.duration_min.toFixed(1)} phút · ${(pickupRoute.distance_m / 1000).toFixed(1)} km`)
         .addTo(layer)
     }
-  }, [facilities, stockByFacility, events, density, mapDonorSearch.data, bloodType, component, showStock, showDonors, showSos, expandedDonorCell, routeEta, sourceFacility, destinationFacility])
+  }, [mapReady, facilities, stockByFacility, activeSosEvents, density, acceptedDonorCellsQuery.data, sharedResponderLocationsQuery.data, mapDonorSearch.data, bloodType, component, showStock, showDonors, showSos, expandedDonorCell, routeEta, pickupRoute, sourceFacility, routeDestinationFacility, destinationId])
 
   const totalStock = useMemo(
     () => [...stockByFacility.values()].reduce((a, b) => a + b, 0),
@@ -525,6 +786,22 @@ export default function MapView() {
       <p className="subtitle">
         Tìm nguồn máu, phát yêu cầu điều chuyển và theo dõi SOS ngay trên bản đồ
       </p>
+      {import.meta.env.DEV && <div className="map-workflow-actions" style={{ marginBottom: 16 }}>
+        <a className="btn btn-secondary" href="http://127.0.0.1:5175/" target="_blank" rel="noreferrer">Mở cửa sổ bệnh viện ↗</a>
+        <a className="btn btn-secondary" href="http://127.0.0.1:5176/" target="_blank" rel="noreferrer">Mở cửa sổ người dân ↗</a>
+      </div>}
+
+      {[
+        { label: 'Danh sách bệnh viện', error: facilitiesQuery.error, retry: facilitiesQuery.refetch },
+        { label: 'Tồn kho máu', error: stockQuery.error, retry: stockQuery.refetch },
+        { label: 'Ca SOS', error: eventsQuery.error, retry: eventsQuery.refetch },
+        { label: 'Mật độ người hiến', error: densityQuery.error, retry: densityQuery.refetch },
+      ].filter(item => item.error).map(({ label, error, retry }) => (
+        <div className="card" role="alert" key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, borderColor: 'var(--bb-red)' }}>
+          <span>{label}: {error?.message ?? 'Không tải được dữ liệu.'}</span>
+          <button className="btn btn-secondary" onClick={() => void retry()}>Thử tải lại</button>
+        </div>
+      ))}
 
       <div className="card">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14 }}>
@@ -537,6 +814,7 @@ export default function MapView() {
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label>RhD</label>
             <select value={rh} onChange={e => setRh(e.target.value)}>
+              <option value="">Chưa rõ RhD</option>
               <option value="+">RhD⁺</option>
               <option value="-">RhD⁻ (hiếm, ~0,1%)</option>
             </select>
@@ -554,32 +832,28 @@ export default function MapView() {
 
       <div className="card map-workflow-card">
         <div className="map-route-controls">
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Cơ sở cần máu</label>
-            <select value={destinationId} onChange={e => setDestinationId(e.target.value)}>
-              <option value="">Chọn nơi nhận</option>
-              {(facilities ?? []).map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-            </select>
-          </div>
           <div className="map-route-status" aria-live="polite">
-            {routeLoading ? 'Đang lấy tuyến đường bộ…' : routeEta ? (
-              routeEta.routing_mode === 'road' && routeEta.geometry && routeEta.geometry.length > 1
-                ? <><strong>{routeEta.duration_min.toFixed(1)} phút</strong> · {(routeEta.distance_m / 1000).toFixed(1)} km · OSRM</>
-                : <span role="alert">Dịch vụ chưa trả về hình học tuyến đường bộ.</span>
+            {routeLoading ? 'Đang lấy tuyến đường…' : routeEta ? (
+              routeEta.geometry && routeEta.geometry.length > 1 && routeEta.routing_mode === 'road'
+                ? <><strong>{routeEta.duration_min.toFixed(1)} phút</strong> · {(routeEta.distance_m / 1000).toFixed(1)} km · {routeEta.provider}</>
+                : routeEta.geometry && routeEta.geometry.length > 1 && routeEta.routing_mode === 'straight_line'
+                  ? <><strong>~{routeEta.duration_min.toFixed(1)} phút</strong> · {(routeEta.distance_m / 1000).toFixed(1)} km · Đường thẳng tham khảo, OSRM không khả dụng</>
+                  : <span role="alert">Dịch vụ chưa trả về hình học tuyến đường.</span>
             ) : routeError ? (
-              <span role="alert">Không lấy được tuyến đường bộ từ OSRM. Kiểm tra dịch vụ định tuyến.</span>
-            ) : sourceId && destinationId && sourceId === destinationId ? (
+              <span role="alert">{routeError instanceof Error ? routeError.message : 'Không lấy được tuyến đường bộ từ OSRM.'}</span>
+            ) : sourceId && routeDestinationFacility && sourceId === routeDestinationFacility.id ? (
               'Chọn hai cơ sở khác nhau để xem tuyến.'
             ) : (
-              'Nguồn sẽ được chọn từ danh sách điều chuyển; bấm “Vẽ tuyến” để xem đường đi.'
+              'Bấm ghim bệnh viện để chọn điểm nhận; chọn “Vẽ tuyến” trong kết quả điều chuyển để hiện đường đi.'
             )}
+            {routeDestinationFacility && <span style={{ marginLeft: 8 }}>Điểm nhận: <strong>{routeDestinationFacility.name}</strong></span>}
           </div>
         </div>
         <div className="map-workflow-actions">
           <button className={`btn ${workflow === 'dispatch' ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => {
               if (workflow === 'dispatch') setWorkflow(null)
-              else { setWorkflow('dispatch'); setMatchResult(null); setDispatchRun(null) }
+              else { setWorkflow('dispatch'); setMatchResult(null); setDispatchRun(null); setSourceId('') }
             }}>
             Điều phối nguồn máu
           </button>
@@ -597,7 +871,7 @@ export default function MapView() {
           </div>
         </div>
 
-        {!!incomingOffers?.length && (
+        {!!session?.facilityId && !!incomingOffers?.length && (
           <section className="card" aria-label="Yêu cầu điều chuyển đến cơ sở" style={{ margin: '0 0 14px', background: 'var(--surface-muted, var(--bg-subtle))' }}>
             <h3 style={{ marginTop: 0 }}>Yêu cầu điều chuyển đang chờ cơ sở của bạn</h3>
             <p style={{ marginTop: 0, color: 'var(--text-muted)', fontSize: 12.5 }}>
@@ -622,11 +896,94 @@ export default function MapView() {
             {respondToOffer.error && <p role="alert" style={{ color: 'var(--bb-red)', marginBottom: 0 }}>{respondToOffer.error.message}</p>}
           </section>
         )}
-        {incomingOffersError && (
+        {session?.facilityId && incomingOffersError && (
           <p role="alert" style={{ color: 'var(--bb-red)', margin: 0 }}>
             Không tải được yêu cầu điều chuyển đến: {incomingOffersError.message}. Hãy khởi động lại bb-core để nạp API điều chuyển mới.
           </p>
         )}
+
+        {trackableSosEvents.length > 0 && !sosTrackingEnabled && <section className="card" aria-label="Theo dõi ca SOS">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <span role="status">Đã tắt theo dõi chi tiết. Các tín hiệu SOS vẫn tiếp tục trên bản đồ.</span>
+            <button className="btn btn-secondary" type="button" onClick={resumeSosTracking}>Theo dõi lại ca SOS</button>
+          </div>
+        </section>}
+
+        {trackedSosEvent && <section className="card" aria-label="Điều khiển vòng SOS trên bản đồ">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <div>
+              <strong>{trackedSosEvent.status === 'fulfilled' ? 'SOS đã đủ người nhận lời · chờ hoàn tất ca' : trackedSosEvent.status === 'expired' ? 'Đang theo dõi ca SOS đã kết thúc' : 'Đang theo dõi 1 ca SOS'}</strong>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Các ca SOS khác vẫn nằm trong lịch sử.</div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn btn-secondary" type="button" onClick={stopSosTracking}>Tắt theo dõi</button>
+              {(session?.role === 'admin' || (!!trackedSosEvent.facility_id && session?.facilityId === trackedSosEvent.facility_id)) && (
+                <button
+                  className="btn btn-danger"
+                  type="button"
+                  disabled={completeSos.isPending}
+                  onClick={() => {
+                    if (window.confirm('Đánh dấu ca SOS đã hoàn tất? Ca sẽ ngừng mời người hiến và vẫn được lưu trong lịch sử.')) {
+                      completeSos.mutate(trackedSosEvent.id)
+                    }
+                  }}
+                >
+                  {completeSos.isPending ? 'Đang hoàn tất…' : 'Hoàn tất ca SOS'}
+                </button>
+              )}
+              <Link className="btn btn-secondary" to={`/sos?eventId=${encodeURIComponent(trackedSosEvent.id)}`}>
+              Mở màn SOS và các vòng →
+              </Link>
+            </div>
+          </div>
+          {completeSos.error && <p role="alert" style={{ color: 'var(--bb-red)', marginBottom: 0 }}>{completeSos.error.message}</p>}
+          <details style={{ marginTop: 12 }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 650, padding: '8px 0' }}>Vòng SOS · đếm ngược và điều khiển thủ công</summary>
+          <div style={{ display: 'grid', gap: 10 }}>
+            {[trackedSosEvent].map(event => {
+              const seconds = secondsUntilNextRing(event, clockNow)
+              const finalSeconds = secondsUntilFinalTimeout(
+                event,
+                trackedSosNotificationsQuery.data ?? [],
+                clockNow,
+              )
+              const countdownSeconds = event.status === 'open' ? finalSeconds ?? seconds : null
+              const countdownLabel = event.status === 'fulfilled'
+                ? 'Đã đủ người nhận lời'
+                : event.status === 'expired'
+                  ? 'Ca đã kết thúc'
+                  : event.ring >= 3
+                ? finalSeconds == null
+                  ? 'Đang tải thời hạn cuối'
+                  : finalSeconds === 0
+                    ? 'Đang chờ máy chủ kết thúc ca'
+                    : 'Tự đóng nếu chưa có người nhận'
+                : seconds == null ? 'Đã đến vòng cuối' : `Tới vòng ${event.ring + 1}`
+              return <div key={event.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) auto auto', alignItems: 'center', gap: 12, padding: 12, border: '1px solid var(--border-color, #ddd)', borderRadius: 9 }}>
+                <div>
+                  <strong>{event.abo ?? ''}{event.rh ?? ''} · vòng {event.ring} / 3</strong>
+                  <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Ca {event.id} · đã có {event.accept_count}/{event.target_count} người đồng ý</div>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 8 }} aria-label="Các vòng 0 đến 3">
+                    {SOS_RING_START_MINUTES.map((minute, ring) => <span key={ring} style={{ padding: '3px 8px', borderRadius: 999, background: ring === event.ring ? 'var(--bb-blue-soft)' : 'var(--surface-muted, #f3f4f6)', color: ring === event.ring ? 'var(--bb-blue)' : 'var(--text-muted)', fontSize: 11, fontWeight: 650 }}>
+                      {ring} · {minute === 0 ? 'T+0' : `T+${minute}`}
+                    </span>)}
+                  </div>
+                </div>
+                <div style={{ minWidth: 150, textAlign: 'center' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{countdownLabel}</div>
+                  <strong style={{ fontVariantNumeric: 'tabular-nums', fontSize: 20 }}>{countdownSeconds == null ? '—' : formatCountdown(countdownSeconds)}</strong>
+                </div>
+                {event.status === 'open' && <button className="btn btn-secondary" disabled={event.ring >= 3 || advanceSos.isPending}
+                  onClick={() => advanceSos.mutate(event.id)}>
+                  {event.ring >= 3 ? 'Vòng cuối' : `Chuyển sang vòng ${event.ring + 1}`}
+                </button>}
+              </div>
+            })}
+          </div>
+          {advanceSos.isPending && <p role="status" style={{ marginBottom: 0 }}>Đang chuyển vòng SOS…</p>}
+          {advanceSos.error && <p role="alert" style={{ color: 'var(--bb-red)', marginBottom: 0 }}>{advanceSos.error.message}</p>}
+          </details>
+        </section>}
 
         {workflow === 'dispatch' && (
           <section className="card" aria-label="Điều phối điều chuyển máu" style={{ margin: 0, background: 'var(--surface-muted, var(--bg-subtle))' }}>
@@ -634,7 +991,7 @@ export default function MapView() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(155px, 1fr))', gap: 12 }}>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Số đơn vị</label>
-                <input type="number" min={1} max={50} value={matchQty} onChange={e => setMatchQty(Math.max(1, Number(e.target.value)))} />
+                <input type="number" min={1} max={500} value={matchQty} onChange={e => setMatchQty(Math.min(500, Math.max(1, Number(e.target.value))))} />
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Mức khẩn cấp</label>
@@ -658,7 +1015,7 @@ export default function MapView() {
               </div>
             </div>
             <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '10px 0' }}>
-              Hệ thống lọc theo ABO/RhD và chế phẩm đang chọn; quy tắc tương hợp hạn chế dùng O âm khi không cần. Với phụ nữ 18–45 tuổi, RhD được giữ theo ngưỡng an toàn; thông tin giới tính/tuổi chưa rõ sẽ được xử lý thận trọng.
+              Hệ thống dùng giới tính và tuổi người nhận cho quy tắc RhD. Khi RhD chưa rõ, phụ nữ 18–45 tuổi được xử lý như RhD âm; các trường hợp khác như RhD dương. Đây là thông tin an toàn của người nhận, không phải bộ lọc giới tính người hiến.
             </p>
             <button className="btn btn-primary" disabled={!destinationFacility || matchSearch.isPending}
               onClick={() => matchSearch.mutate()}>
@@ -674,12 +1031,24 @@ export default function MapView() {
                 {dispatchRun && <div style={{ margin: '12px 0', padding: 12, borderRadius: 8, borderLeft: '4px solid', borderColor: dispatchPhase === 'waiting' ? '#eab308' : dispatchPhase === 'fulfilled' ? '#16a34a' : '#dc2626', background: dispatchPhase === 'waiting' ? '#fefce8' : dispatchPhase === 'fulfilled' ? '#f0fdf4' : '#fef2f2' }}>
                   {dispatchPhase === 'waiting' && <strong>Đang chờ phản hồi — còn {Math.floor(yellowSecondsLeft / 60)}:{String(yellowSecondsLeft % 60).padStart(2, '0')}</strong>}
                   {dispatchPhase === 'sos_pending' && <strong>Không còn bệnh viện chờ phản hồi — hệ thống đang tự mở SOS người hiến.</strong>}
-                  {dispatchPhase === 'sos' && <strong>SOS người hiến đã bắt đầu · vòng {linkedSos?.ring ?? 0} · đã gửi {linkedSos?.donors_notified ?? 0} lời mời.</strong>}
+                  {dispatchPhase === 'sos' && (linkedSos?.status === 'completed'
+                    ? <strong>Ca SOS đã hoàn tất.</strong>
+                    : linkedSos?.status === 'fulfilled'
+                      ? <strong>SOS đã nhận đủ người đồng ý · {linkedSos.accept_count}/{linkedSos.target_count}. Mở hồ sơ để cơ sở xác nhận hiến thật.</strong>
+                      : linkedSos?.status === 'expired'
+                        ? <strong>Ca SOS đã kết thúc ở vòng {linkedSos.ring}; có {linkedSos.accept_count}/{linkedSos.target_count} người đồng ý.</strong>
+                        : <strong>SOS người hiến đã bắt đầu · vòng {linkedSos?.ring ?? 0} · đã gửi {linkedSos?.donors_notified ?? 0} lời mời.</strong>)}
+                  {dispatchPhase === 'sos' && linkedSos && <Link to={`/sos?eventId=${encodeURIComponent(linkedSos.id)}`}>Mở dashboard xác nhận hiến →</Link>}
                   {dispatchPhase === 'fulfilled' && <strong>Đã nhận đủ {acceptedQty} đơn vị điều chuyển; SOS không cần thiết.</strong>}
                   {dispatchPhase === 'sos' && linkedSos?.message && <div style={{ marginTop: 4 }}>{linkedSos.message}</div>}
                   {dispatchPhase === 'sos_pending' && <div style={{ marginTop: 4 }}>Nếu đã có một phần nguồn, SOS chỉ gọi cho số đơn vị còn thiếu. Bộ lập lịch kiểm tra tối đa mỗi 30 giây.</div>}
                 </div>}
-                <div style={{ overflowX: 'auto', marginTop: 8 }}>
+                {dispatchPhase === 'sos_pending' && openSos.error && (
+                  <p role="alert" style={{ color: 'var(--bb-red)', marginBottom: 0 }}>
+                    Không mở được SOS người hiến: {openSos.error.message}. Hãy kiểm tra backend local ở cổng 8000 rồi thử lại từ mục SOS.
+                  </p>
+                )}
+                {!!transferOffers?.length && <div style={{ overflowX: 'auto', marginTop: 8 }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead><tr><th align="left">Ưu tiên</th><th align="left">Cơ sở</th><th align="left">Kho chia sẻ an toàn</th><th align="left">Trạng thái</th><th align="left">Tuyến</th></tr></thead>
                     <tbody>{[...(transferOffers ?? [])].sort((a: TransferOffer, b: TransferOffer) => a.priority_rank - b.priority_rank).map(offer => (
@@ -688,13 +1057,15 @@ export default function MapView() {
                         <td style={{ padding: '8px 6px' }}>{offer.source_facility_name}</td>
                         <td style={{ padding: '8px 6px' }}><span style={{ display: 'inline-block', borderRadius: 12, padding: '2px 8px', color: '#fff', background: stockColor(offer.available_qty) }}>{offer.available_qty} đơn vị · {stockLabel(offer.available_qty)}</span></td>
                         <td style={{ padding: '8px 6px' }}>{offer.status === 'pending' ? 'Đang chờ' : offer.status === 'accepted' ? `Đã nhận ${offer.accepted_qty}` : offer.status === 'declined' ? 'Từ chối' : offer.status === 'expired' ? 'Hết hạn' : offer.status === 'cancelled' ? 'Đã đủ số lượng' : 'Không có nguồn'}</td>
-                        <td style={{ padding: '8px 6px' }}>{offer.source_facility_id && destinationFacility && offer.source_facility_id !== destinationFacility.id
-                          ? <button className="btn btn-secondary" onClick={() => { setSourceId(offer.source_facility_id!); setShowStock(true) }}>Vẽ tuyến</button>
-                          : offer.source_facility_id === destinationFacility?.id ? 'Cùng cơ sở nhận' : '—'}</td>
+                        <td style={{ padding: '8px 6px' }}>{(offer.accepted_qty ?? 0) > 0 && offer.source_facility_id && offer.source_facility_id !== routeDestinationFacility?.id
+                          ? <button className="btn btn-secondary" disabled={!routeDestinationFacility || routeLoading} onClick={() => { setDestinationId(dispatchRun?.destinationFacilityId ?? destinationId); setSourceId(offer.source_facility_id!); setShowStock(true); setRouteRequestVersion(version => version + 1) }}>Vẽ tuyến</button>
+                          : offer.status === 'pending' ? 'Chờ bệnh viện phản hồi'
+                            : offer.status === 'accepted' ? 'Đã nhận hỗ trợ'
+                              : offer.source_facility_id === routeDestinationFacility?.id ? 'Cùng cơ sở nhận' : '—'}</td>
                       </tr>
                     ))}</tbody>
                   </table>
-                </div>
+                </div>}
                 {dispatchPhase === 'sos' && <p style={{ marginBottom: 0, fontSize: 12.5, color: 'var(--text-muted)' }}>
                   SOS tự leo thang bốn vòng ở T+0, T+10, T+25 và T+45 phút; danh sách mời không gọi trùng người giữa các vòng.
                 </p>}
@@ -716,37 +1087,45 @@ export default function MapView() {
                 <select value={sosUrgency} onChange={e => setSosUrgency(e.target.value)}>
                   {Object.entries(URGENCY_LABELS).map(([key, value]) => <option key={key} value={key}>{value.label} — {value.desc}</option>)}
                 </select></div>
-              <div className="form-group" style={{ marginBottom: 0 }}><label>Vòng bắt đầu</label>
-                <select value={sosRing} onChange={e => setSosRing(Number(e.target.value))}>
-                  {[0, 1, 2, 3].map(ring => <option key={ring} value={ring}>Vòng {ring}</option>)}
-                </select></div>
             </div>
-            <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={!destinationFacility || openSos.isPending}
-              onClick={() => openSos.mutate()}>{openSos.isPending ? 'Đang gửi SOS…' : `Gửi SOS ${bloodType}`}</button>
+            <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={!destinationFacility || !rh || openSos.isPending}
+              onClick={() => openSos.mutate({})}>{openSos.isPending ? 'Đang gửi SOS…' : `Gửi SOS ${bloodType}`}</button>
+            {!rh && <p role="note" style={{ color: 'var(--text-muted)', fontSize: 12.5 }}>SOS độc lập cần biết RhD để chọn người hiến an toàn. Hãy xác nhận RhD hoặc dùng luồng tìm nguồn điều chuyển.</p>}
             {openSos.error && <p role="alert" style={{ color: 'var(--bb-red)' }}>{openSos.error.message}</p>}
-            {openedSos && <div role="status" style={{ marginTop: 12, padding: 12, borderRadius: 8, background: 'var(--bb-green-soft, #f0fdf4)' }}>
-              <strong>SOS đã mở</strong> · {openedSos.donors_notified} lời mời đã gửi · vòng {openedSos.ring}
-              <div>{openedSos.message}</div><small>Mã sự kiện: {openedSos.id}</small>
+            {displayedOpenedSos && <div role="status" style={{ marginTop: 12, padding: 12, borderRadius: 8, background: 'var(--bb-green-soft, #f0fdf4)' }}>
+              <strong>{displayedOpenedSos.status === 'completed' ? 'Ca SOS đã hoàn tất' : displayedOpenedSos.status === 'fulfilled' ? 'SOS đã đủ người đồng ý' : displayedOpenedSos.status === 'expired' ? 'SOS đã kết thúc' : 'SOS đang mở'}</strong>
+              {' · '}{displayedOpenedSos.accept_count}/{displayedOpenedSos.target_count} người đồng ý
+              {displayedOpenedSos.status === 'open' && <> · đã gửi {displayedOpenedSos.donors_notified} lời mời · vòng {displayedOpenedSos.ring}</>}
+              {displayedOpenedSos.message && displayedOpenedSos.status === 'open' && <div>{displayedOpenedSos.message}</div>}
+              <small>Mã sự kiện: {displayedOpenedSos.id}</small>
             </div>}
           </section>
         )}
       </div>
 
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
+        <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+          Tồn kho: {metricFreshness(stockQuery.dataUpdatedAt, stockQuery.isFetching)} · Ca SOS: {metricFreshness(openEventsQuery.dataUpdatedAt || eventsQuery.dataUpdatedAt, openEventsQuery.isFetching || eventsQuery.isFetching)} · Người hiến: {metricFreshness(densityQuery.dataUpdatedAt, densityQuery.isFetching)}
+        </span>
+        <button className="btn btn-secondary" type="button" onClick={() => void refreshMapStats()} disabled={statsRefreshing}>
+          <RefreshCw size={14} /> {statsRefreshing ? 'Đang cập nhật…' : 'Cập nhật số liệu'}
+        </button>
+      </div>
       <div className="stat-grid">
         <div className="stat-card">
-          <div className="stat-number">{totalStock}</div>
+          <div className="stat-number">{stockQuery.isError ? '—' : stockQuery.isLoading ? '…' : totalStock}</div>
           <div className="stat-label">Đơn vị {bloodType} còn hạn</div>
         </div>
         <div className="stat-card">
-          <div className="stat-number">{events?.length ?? 0}</div>
+          <div className="stat-number">{openEventsQuery.isError && eventsQuery.isError ? '—' : activeSosEvents.length}</div>
           <div className="stat-label">Ca đang cần máu</div>
         </div>
         <div className="stat-card">
-          <div className="stat-number">{donorTotal}</div>
+          <div className="stat-number">{densityQuery.isError ? '—' : densityQuery.isLoading ? '…' : donorTotal}</div>
           <div className="stat-label">Người hiến {bloodType} trong vùng</div>
         </div>
         <div className="stat-card">
-          <div className="stat-number">{density?.cells.length ?? 0}</div>
+          <div className="stat-number">{densityQuery.isError ? '—' : densityQuery.isLoading ? '…' : density?.cells.length ?? 0}</div>
           <div className="stat-label">Ô lưới có người hiến</div>
         </div>
       </div>
@@ -808,6 +1187,7 @@ export default function MapView() {
           <Legend color="#dc2626" text="Rất thấp (<20)" />
           <Legend color="#991b1b" text="Hết" />
           <Legend color="#7c3aed" text="Người hiến (bấm chấm để tách ra)" />
+          <Legend color="#0891b2" text="Người hiến đã nhận lời SOS" />
         </div>
         <p style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 14, marginBottom: 0 }}>
           Chấm to nhỏ theo số đơn vị. Ghim vuông là ca đang cần máu — viền đỏ nhấp nháy nghĩa là cấp cứu.

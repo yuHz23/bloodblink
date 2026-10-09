@@ -55,6 +55,10 @@ async def lifespan(app: FastAPI):
                 "recipient_sex": "VARCHAR(1)",
                 "recipient_age": "INTEGER",
             },
+            "sos_event": {
+                "recipient_sex": "VARCHAR(1)",
+                "recipient_age": "INTEGER",
+            },
             "transfer_candidate": {
                 "compatible": "BOOLEAN NOT NULL DEFAULT FALSE",
                 "blocked_reason": "TEXT",
@@ -62,6 +66,13 @@ async def lifespan(app: FastAPI):
             "transfer_order": {
                 "unit_id": "VARCHAR REFERENCES blood_unit(id)",
                 "completed_at": "TIMESTAMP WITH TIME ZONE",
+            },
+            "sos_response": {
+                "location_cell": "VARCHAR",
+                "location_latitude": "DOUBLE PRECISION",
+                "location_longitude": "DOUBLE PRECISION",
+                "location_sharing_consented": "BOOLEAN",
+                "location_shared_at": "TIMESTAMP WITH TIME ZONE",
             },
         }
         inspector = inspect(sync_connection)
@@ -75,6 +86,55 @@ async def lifespan(app: FastAPI):
         FacilitySupportContribution.__table__.create(sync_connection, checkfirst=True)
         SOSReward.__table__.create(sync_connection, checkfirst=True)
         TransferOffer.__table__.create(sync_connection, checkfirst=True)
+        # A response can race the browser fallback and scheduler. Preserve old
+        # rows, but keep only the earliest open SOS for each transfer request.
+        sync_connection.exec_driver_sql("""
+            WITH ranked AS (
+                SELECT id, row_number() OVER (
+                    PARTITION BY request_id ORDER BY accept_count DESC, opened_at, id
+                ) AS position
+                FROM sos_event
+                WHERE request_id IS NOT NULL AND status = 'open'
+            )
+            UPDATE sos_event AS event
+            SET status = CASE
+                WHEN event.accept_count >= event.target_count THEN 'fulfilled'
+                ELSE 'expired'
+            END
+            FROM ranked
+            WHERE event.id = ranked.id AND ranked.position > 1
+        """)
+        # Accepted donor H3 cells used to be copied automatically. They are no
+        # longer treated as consent to share a location for a specific SOS.
+        sync_connection.exec_driver_sql("""
+            UPDATE sos_response
+            SET location_cell = NULL
+            WHERE location_sharing_consented IS DISTINCT FROM TRUE
+        """)
+        sync_connection.exec_driver_sql("""
+            CREATE UNIQUE INDEX IF NOT EXISTS ix_sos_event_open_request_unique
+            ON sos_event (request_id)
+            WHERE request_id IS NOT NULL AND status = 'open'
+        """)
+        sync_connection.exec_driver_sql("""
+            WITH ranked AS (
+                SELECT id, row_number() OVER (
+                    PARTITION BY facility_id, component_code, abo, rh, urgency, target_count
+                    ORDER BY accept_count DESC, opened_at, id
+                ) AS position
+                FROM sos_event
+                WHERE request_id IS NULL AND facility_id IS NOT NULL AND status = 'open'
+            )
+            UPDATE sos_event AS event
+            SET status = 'expired'
+            FROM ranked
+            WHERE event.id = ranked.id AND ranked.position > 1
+        """)
+        sync_connection.exec_driver_sql("""
+            CREATE UNIQUE INDEX IF NOT EXISTS ix_sos_event_open_standalone_unique
+            ON sos_event (facility_id, component_code, abo, rh, urgency, target_count)
+            WHERE request_id IS NULL AND facility_id IS NOT NULL AND status = 'open'
+        """)
 
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)

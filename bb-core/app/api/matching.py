@@ -1,5 +1,6 @@
 """BB-Core — Matching API: find and rank compatible blood units."""
 
+import asyncio
 import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -16,6 +17,7 @@ from app.models.database import (
     ComponentCode, ABO, RhD, UnitStatus, RequestUrgency, TransferState,
 )
 from app.services.sos_advice import advise
+from app.services.transfer_sos import start_sos_if_transfer_exhausted
 from app.services.matching import (
     find_matching_units, TransferRequest as MatchRequest,
     BloodUnitCandidate,
@@ -76,6 +78,8 @@ async def _expire_transfer_offers(db: AsyncSession, offers: list[TransferOffer])
             changed = True
     if changed:
         await db.commit()
+        for request_id in {offer.request_id for offer in offers}:
+            await start_sos_if_transfer_exhausted(db, request_id)
 
 
 @router.post("/request", response_model=TransferRequestOut)
@@ -236,15 +240,20 @@ async def find_matches(
         )
         return int(route.duration_s)
 
-    # Pre-compute ETAs for all source facilities → requesting facility
-    eta_cache: dict[str, int] = {}
-    for candidate in candidates:
-        fid = candidate.held_by_facility_id
-        if fid not in eta_cache:
+    # Pre-compute each source facility ETA once, in parallel. Sequential OSRM
+    # calls made matching wait for every hospital's network timeout in turn.
+    eta_semaphore = asyncio.Semaphore(4)
+
+    async def load_eta(fid: str) -> tuple[str, int]:
+        async with eta_semaphore:
             try:
-                eta_cache[fid] = await eta_lookup(fid, tr.requester_facility_id)
+                return fid, await eta_lookup(fid, tr.requester_facility_id)
             except Exception:
-                eta_cache[fid] = 5400  # 90 min fallback
+                return fid, 5400  # 90 min fallback
+
+    source_facility_ids = {candidate.held_by_facility_id for candidate in candidates}
+    eta_results = await asyncio.gather(*(load_eta(fid) for fid in sorted(source_facility_ids)))
+    eta_cache: dict[str, int] = dict(eta_results)
 
     def sync_eta_lookup(from_facility_id: str, to_facility_id: str) -> int:
         """Synchronous ETA lookup using pre-computed cache."""
@@ -359,6 +368,7 @@ async def broadcast_transfer_request(
     )).scalars().all()
     if existing:
         await _expire_transfer_offers(db, existing)
+        await start_sos_if_transfer_exhausted(db, request_id, actor=principal.subject)
         return [TransferOfferOut(**(await _offer_payload(db, offer))) for offer in existing]
 
     now = datetime.now(timezone.utc)
@@ -441,6 +451,11 @@ async def broadcast_transfer_request(
         ))
     await db.commit()
 
+    # Start SOS for a known hospital capacity deficit immediately, even while
+    # viable facilities still have time to respond. The helper only subtracts
+    # capacity promised by pending offers, so donors are asked for the gap.
+    await start_sos_if_transfer_exhausted(db, request_id, actor=principal.subject)
+
     offers = (await db.execute(
         select(TransferOffer)
         .where(TransferOffer.request_id == request_id)
@@ -520,14 +535,19 @@ async def respond_to_transfer_offer(
         offer.status = "expired"
         offer.responded_at = now
         offer.response_note = "Hết thời gian chờ màu vàng"
+        request_id = request.id
         await db.commit()
+        await start_sos_if_transfer_exhausted(db, request_id, actor=principal.subject)
         raise HTTPException(status_code=409, detail="Offer response window has expired")
 
     if not req.accept:
         offer.status = "declined"
         offer.responded_at = now
         offer.response_note = req.note or "Cơ sở từ chối hỗ trợ"
+        request_id = request.id
         await db.commit()
+        await db.refresh(offer)
+        await start_sos_if_transfer_exhausted(db, request_id, actor=principal.subject)
         await db.refresh(offer)
         return TransferOfferOut(**(await _offer_payload(db, offer)))
 
@@ -606,7 +626,10 @@ async def respond_to_transfer_offer(
             other.responded_at = now
             other.response_note = "Nơi nhận đã đủ số lượng"
 
+    request_id = request.id
     await db.commit()
+    await db.refresh(offer)
+    await start_sos_if_transfer_exhausted(db, request_id, actor=principal.subject)
     await db.refresh(offer)
     return TransferOfferOut(**(await _offer_payload(db, offer)))
 

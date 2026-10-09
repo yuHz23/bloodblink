@@ -6,7 +6,7 @@ import pytest
 
 from app.services.routing import (
     StraightLineRouting, OSRMRouting, RoutingService,
-    HCMC_FACILITIES, ETA_COMPARISON_PAIRS,
+    RoutingUnavailableError, HCMC_FACILITIES, ETA_COMPARISON_PAIRS,
 )
 
 
@@ -73,6 +73,19 @@ class TestHaversine:
 
 class TestRoutingService:
     """Test facade and provider swapping."""
+
+    @pytest.mark.asyncio
+    async def test_route_falls_back_to_drawable_straight_line_geometry(self):
+        class UnavailableProvider:
+            async def get_route(self, *_args, **_kwargs):
+                raise RoutingUnavailableError("OSRM unavailable")
+
+        svc = RoutingService(provider=UnavailableProvider())
+        route = await svc.get_route_with_fallback(10.7869, 106.6854, 10.7635, 106.6690)
+
+        assert route.mode == "straight_line"
+        assert route.provider == "straight_line"
+        assert route.geometry == [[106.6854, 10.7869], [106.6690, 10.7635]]
 
     def test_default_provider_is_straight_line(self):
         svc = RoutingService()

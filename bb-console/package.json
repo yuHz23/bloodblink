@@ -4,7 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host 127.0.0.1 --port 5174 --strictPort",
+    "dev:sim:hospital": "vite --mode hospital --host 127.0.0.1 --port 5175 --strictPort",
+    "dev:sim:citizen": "vite --mode citizen --host 127.0.0.1 --port 5176 --strictPort",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview"

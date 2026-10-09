@@ -12,7 +12,7 @@ from app.services.routing import (
 
 router = APIRouter()
 
-# Use road geometry for ETAs and map routes. OSRM_URL can point to a hosted router.
+# Use OSRM road geometry when available; map routes get a marked straight-line fallback.
 routing_service = RoutingService(provider=OSRMRouting(base_url=settings.osrm_url))
 
 
@@ -25,7 +25,7 @@ async def get_eta(
     mode: str = Query(default="car", description="Transport mode: car, motorcycle, emergency"),
 ):
     """Get estimated travel time between two coordinates."""
-    result = await routing_service.get_route(from_lat, from_lon, to_lat, to_lon, mode)
+    result = await routing_service.get_route_with_fallback(from_lat, from_lon, to_lat, to_lon, mode)
     return {
         "from": {"lat": from_lat, "lon": from_lon},
         "to": {"lat": to_lat, "lon": to_lon},

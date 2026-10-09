@@ -23,10 +23,21 @@ interface AuthValue {
   login: (username: string, password: string) => Promise<void>
   logout: () => void
   isStaff: boolean
+  isLocalBypass: boolean
 }
 
 const SESSION_KEY = 'bb_session'
+const LOCAL_AUTH_BYPASS = import.meta.env.DEV && import.meta.env.VITE_LOCAL_AUTH_BYPASS === 'true'
 const AuthContext = createContext<AuthValue | null>(null)
+
+const LOCAL_SESSION: Session = {
+  role: 'admin',
+  subject: 'local-development',
+  username: 'local',
+  fullName: 'Chế độ phát triển local',
+  facilityId: null,
+  facilityName: 'Bỏ qua đăng nhập trên máy này',
+}
 
 function readStoredSession(): Session | null {
   try {
@@ -49,11 +60,12 @@ function toSession(r: LoginResult): Session {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [session, setSession] = useState<Session | null>(LOCAL_AUTH_BYPASS ? LOCAL_SESSION : null)
+  const [loading, setLoading] = useState(!LOCAL_AUTH_BYPASS)
 
   // Có token trong máy chưa chắc còn hiệu lực — hỏi lại /auth/me trước khi vào.
   useEffect(() => {
+    if (LOCAL_AUTH_BYPASS) return
     const stored = readStoredSession()
     if (!getToken() || !stored) {
       setLoading(false)
@@ -70,6 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const onExpired = () => {
+      if (LOCAL_AUTH_BYPASS) return
       localStorage.removeItem(SESSION_KEY)
       setSession(null)
     }
@@ -86,6 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const logout = () => {
+    if (LOCAL_AUTH_BYPASS) return
     clearToken()
     localStorage.removeItem(SESSION_KEY)
     setSession(null)
@@ -97,6 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     login,
     logout,
     isStaff: session?.role === 'facility_staff' || session?.role === 'admin',
+    isLocalBypass: LOCAL_AUTH_BYPASS,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

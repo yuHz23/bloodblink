@@ -119,6 +119,7 @@ class StraightLineRouting(RoutingProvider):
         return RouteResult(
             distance_m=round(dist, 1),
             duration_s=round(duration, 1),
+            geometry=[[from_lon, from_lat], [to_lon, to_lat]],
             provider="straight_line",
             mode="straight_line",
         )
@@ -222,6 +223,15 @@ class RoutingService:
         self, from_lat: float, from_lon: float, to_lat: float, to_lon: float, mode: str = "car"
     ) -> RouteResult:
         return await self._provider.get_route(from_lat, from_lon, to_lat, to_lon, mode)
+
+    async def get_route_with_fallback(
+        self, from_lat: float, from_lon: float, to_lat: float, to_lon: float, mode: str = "car"
+    ) -> RouteResult:
+        """Return a road route when available, otherwise a clearly marked straight-line estimate."""
+        try:
+            return await self.get_route(from_lat, from_lon, to_lat, to_lon, mode)
+        except RoutingUnavailableError:
+            return await self._straight_line.get_route(from_lat, from_lon, to_lat, to_lon, mode)
 
     async def get_eta(
         self, from_lat: float, from_lon: float, to_lat: float, to_lon: float, mode: str = "car"

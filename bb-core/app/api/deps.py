@@ -7,13 +7,16 @@ Nguyên tắc: mọi endpoint dưới /api đều cần token, TRỪ bốn cái 
 """
 
 from dataclasses import dataclass
+import ipaddress
 from typing import Optional
+from urllib.parse import urlsplit
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-from app.services.auth import decode_access_token, ROLE_DONOR, STAFF_ROLES
+from app.config import settings
+from app.services.auth import decode_access_token, ROLE_ADMIN, ROLE_DONOR, STAFF_ROLES
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -42,9 +45,41 @@ def _unauthorized(detail: str) -> HTTPException:
     )
 
 
+def _is_local_bypass_request(request: Request) -> bool:
+    """Only trust explicit local development requests, never remote origins."""
+    if not settings.local_auth_bypass or request.client is None:
+        return False
+    try:
+        if not ipaddress.ip_address(request.client.host).is_loopback:
+            return False
+    except ValueError:
+        return False
+
+    origin = request.headers.get("origin")
+    if not origin:
+        return True
+    try:
+        parsed = urlsplit(origin)
+        return (
+            parsed.scheme == "http"
+            and parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+            and parsed.username is None
+            and parsed.password is None
+            and not parsed.path
+            and not parsed.query
+            and not parsed.fragment
+        )
+    except ValueError:
+        return False
+
+
 async def get_principal(
+    request: Request,
     creds: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
 ) -> Principal:
+    if _is_local_bypass_request(request):
+        return Principal(subject="local-development", role=ROLE_ADMIN)
+
     if creds is None:
         raise _unauthorized("Thiếu token — gửi header Authorization: Bearer <token>")
 

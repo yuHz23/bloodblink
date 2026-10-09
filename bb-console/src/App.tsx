@@ -1,5 +1,5 @@
 import { Routes, Route, NavLink } from 'react-router-dom'
-import { Droplets, FileText, BarChart3, Map, LogOut, Sun, Moon, Monitor } from 'lucide-react'
+import { Droplets, FileText, BarChart3, Map, Siren, LogOut, Sun, Moon, Monitor } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
 import Inventory from './pages/Inventory'
 import Matching from './pages/Matching'
@@ -19,7 +19,7 @@ const THEMES: { key: ThemeChoice; icon: typeof Sun; label: string }[] = [
 ]
 
 export default function App() {
-  const { session, loading, logout } = useAuth()
+  const { session, loading, logout, isLocalBypass } = useAuth()
   const { theme, setTheme } = useTheme()
 
   // Đang hỏi lại /auth/me xem token còn hiệu lực không.
@@ -51,6 +51,9 @@ export default function App() {
           <NavLink to="/map" className={({ isActive }) => isActive ? 'active' : ''}>
             <Map size={18} /> Bản đồ
           </NavLink>
+          <NavLink to="/sos" className={({ isActive }) => isActive ? 'active' : ''}>
+            <Siren size={18} /> SOS &amp; các vòng
+          </NavLink>
           {/* Nhật ký cho biết cơ sở nào tra ai lúc nào nên backend chỉ cho vai
               trò admin; ẩn mục này với tài khoản cơ sở thay vì để họ bấm vào rồi
               nhận 403. */}
@@ -79,14 +82,16 @@ export default function App() {
           </div>
 
           <div style={{ fontSize: 13, fontWeight: 650, color: '#fff' }}>
-            {session.fullName ?? session.username}
+            {isLocalBypass ? 'Chế độ local' : session.fullName ?? session.username}
           </div>
           <div style={{ fontSize: 11, color: 'var(--sidebar-text-muted)', marginBottom: 11 }}>
-            {session.facilityName ?? (session.role === 'admin' ? 'Quản trị hệ thống' : 'Nhân viên cơ sở')}
+            {isLocalBypass ? 'Đã bỏ qua đăng nhập trên máy này' : session.facilityName ?? (session.role === 'admin' ? 'Quản trị hệ thống' : 'Nhân viên cơ sở')}
           </div>
-          <button className="btn btn-secondary" onClick={logout} style={{ width: '100%', justifyContent: 'center' }}>
-            <LogOut size={14} /> Đăng xuất
-          </button>
+          {!isLocalBypass && (
+            <button className="btn btn-secondary" onClick={logout} style={{ width: '100%', justifyContent: 'center' }}>
+              <LogOut size={14} /> Đăng xuất
+            </button>
+          )}
         </div>
       </aside>
       <main className="main">

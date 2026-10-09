@@ -25,10 +25,9 @@ export default function Routing() {
       <p className="subtitle">ETA và khoảng cách theo mạng đường OSRM; tuyến đường hiển thị trong trang Bản đồ.</p>
 
       <div className="card" style={{ borderLeft: '3px solid var(--bb-blue)' }}>
-        <strong>Chỉ dùng tuyến đường bộ</strong>
+        <strong>Tuyến đường bộ và tuyến tham khảo</strong>
         <p style={{ marginBottom: 0, fontSize: 13, color: 'var(--bb-gray-600)', lineHeight: 1.7 }}>
-          BB-Core lấy hình học tuyến từ OSRM để vẽ trên bản đồ. Nếu OSRM không khả dụng,
-          hệ thống báo chưa có tuyến thay vì nối hai cơ sở bằng đường thẳng. ETA không gồm dữ liệu giao thông thời gian thực.
+          BB-Core ưu tiên hình học đường bộ từ OSRM. Khi OSRM không khả dụng, bản đồ hiển thị đường thẳng nét đứt màu cam và ETA tham khảo để phân biệt với tuyến đường bộ. ETA không gồm dữ liệu giao thông thời gian thực.
         </p>
       </div>
 

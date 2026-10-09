@@ -91,7 +91,9 @@ async def facility_cell(db: AsyncSession, facility_id: Optional[str]) -> Optiona
 
 
 def donor_matches(donor: Donor, abo: Optional[str], rh: Optional[str],
-                  component: str, ring: int) -> tuple[bool, str]:
+                  component: str, ring: int,
+                  recipient_sex: Optional[str] = None,
+                  recipient_age: Optional[int] = None) -> tuple[bool, str]:
     """
     Người hiến này có gọi được cho ca bệnh nhóm `abo``rh` không?
 
@@ -105,7 +107,15 @@ def donor_matches(donor: Donor, abo: Optional[str], rh: Optional[str],
     if ring == 0:
         return same_type, "cùng nhóm máu" if same_type else "vòng 0 chỉ nhận cùng nhóm máu"
 
-    return is_compatible(donor.abo.value, donor.rh.value, abo, rh, component)
+    return is_compatible(
+        donor.abo.value,
+        donor.rh.value,
+        abo,
+        rh,
+        component,
+        recipient_sex,
+        recipient_age,
+    )
 
 
 def apply_geocell_filter(stmt, cells: Optional[list[str]], now: datetime):
@@ -134,6 +144,8 @@ async def select_donors(
     abo: Optional[str],
     rh: Optional[str],
     component: str,
+    recipient_sex: Optional[str] = None,
+    recipient_age: Optional[int] = None,
 ) -> list[Donor]:
     """Người hiến đã xác minh, đúng vùng, tương hợp và đủ khoảng cách hiến."""
     now = datetime.now(timezone.utc)
@@ -150,7 +162,7 @@ async def select_donors(
 
     candidates = (await db.execute(stmt)).scalars().all()
     return [d for d in candidates
-            if donor_matches(d, abo, rh, component, ring)[0]
+            if donor_matches(d, abo, rh, component, ring, recipient_sex, recipient_age)[0]
             and donation_eligibility(d.last_donation_at, component=component, now=now)["eligible"]]
 
 
@@ -185,6 +197,8 @@ async def dispatch_ring(db: AsyncSession, event: SOSEvent) -> DispatchResult:
         abo=event.abo,
         rh=event.rh,
         component=(event.component_code or "WB").upper(),
+        recipient_sex=event.recipient_sex,
+        recipient_age=event.recipient_age,
     )
     result.matched = len(donors)
     if not donors:
@@ -277,12 +291,21 @@ async def escalate_event(db: AsyncSession, event: SOSEvent) -> DispatchResult:
     # Khoá dòng sự kiện suốt lượt nâng vòng: bộ lập lịch (30 giây/lượt) và nút
     # leo thang tay trên console có thể vào cùng lúc, và nếu cả hai cùng đọc
     # `ring` cũ thì vòng bị nhảy hai bậc mà một bậc không gọi ai.
-    if db.bind is not None and db.bind.dialect.name == "postgresql":
+    if db.bind is not None:
+        statement = select(SOSEvent).where(SOSEvent.id == event.id)
+        if db.bind.dialect.name == "postgresql":
+            statement = statement.with_for_update()
         locked = (await db.execute(
-            select(SOSEvent).where(SOSEvent.id == event.id).with_for_update()
+            statement.execution_options(populate_existing=True)
         )).scalar_one_or_none()
-        if locked is not None:
-            event = locked
+        if locked is None:
+            return DispatchResult(ring=event.ring)
+        event = locked
+
+    # A donor can fulfill the target after a scheduler or manual caller loaded
+    # this event. Recheck the locked, refreshed row before issuing another ring.
+    if event.status != "open":
+        return DispatchResult(ring=event.ring)
 
     if event.ring >= 3:
         return DispatchResult(ring=event.ring)
@@ -291,3 +314,13 @@ async def escalate_event(db: AsyncSession, event: SOSEvent) -> DispatchResult:
     await db.commit()
     await db.refresh(event)
     return await dispatch_ring(db, event)
+
+
+async def dispatch_initial_rings(db: AsyncSession, event: SOSEvent) -> tuple[DispatchResult, int]:
+    """Try the requested ring, then immediately widen until at least one invite is sent."""
+    result = await dispatch_ring(db, event)
+    escalations = 0
+    while result.notified == 0 and event.ring < 3:
+        result = await escalate_event(db, event)
+        escalations += 1
+    return result, escalations

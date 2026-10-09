@@ -25,6 +25,7 @@ const ACTIONS: Record<string, { label: string; tone: 'normal' | 'warning' | 'urg
   'donor.list':          { label: 'Xem danh sách người hiến', tone: 'warning' },
   'sos.open':            { label: 'Mở lời kêu gọi',         tone: 'urgent' },
   'sos.escalate':        { label: 'Nâng vòng',              tone: 'urgent' },
+  'sos.complete':        { label: 'Hoàn tất ca SOS',        tone: 'normal' },
   'sos.respond':         { label: 'Người hiến trả lời',     tone: 'normal' },
   'sos.contact_reveal':  { label: 'Xem liên hệ người nhận lời', tone: 'urgent' },
 }

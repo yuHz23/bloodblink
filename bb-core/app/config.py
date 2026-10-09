@@ -87,6 +87,8 @@ class Settings(BaseSettings):
     # Máy chủ TỪ CHỐI khởi động nếu jwt_secret còn là giá trị mặc định, trừ khi
     # bật cờ này. Đặt True chỉ khi chạy test hoặc nghịch trên máy cá nhân.
     allow_default_jwt_secret: bool = False
+    # Explicit opt-in for local development; deps.py also requires a loopback request.
+    local_auth_bypass: bool = False
 
     # ── Matching engine ──
     safety_margin_hours: float = 2.0   # buffer before expiry
