@@ -1,7 +1,7 @@
 /// BB-SOS — Settings Screen
 ///
-/// App settings: API URL, notification preferences, privacy controls,
-/// H3 geocell management, offline queue status.
+/// App settings: API URL, notification preferences, location sharing,
+/// offline queue status.
 
 import 'package:flutter/material.dart';
 
@@ -10,7 +10,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hive/hive.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
-import '../models/donor_profile.dart';
 import '../services/api_service.dart';
 import '../services/sos_inbox_service.dart';
 import 'login_screen.dart';
@@ -36,7 +35,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _systemNotificationsEnabled = true;
   bool _testingNotification = false;
   bool _locationSharing = false;
-  int _h3Resolution = 7;
   int _offlineQueueSize = 0;
 
   @override
@@ -91,7 +89,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _pushNotifications = prefs.getBool('push_notifications') ?? true;
       _sosAlerts = prefs.getBool('sos_alerts') ?? true;
       _locationSharing = prefs.getBool('location_sharing') ?? false;
-      _h3Resolution = prefs.getInt('h3_resolution') ?? 7;
       _offlineQueueSize = box.length;
     });
   }
@@ -314,66 +311,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       color: _locationSharing ? context.bb.info : context.bb.faint,
                     ),
                   ),
-                  const Divider(),
-                  ListTile(
-                    leading: const Icon(Icons.grid_on, size: 20),
-                    title: const Text('Độ phân giải H3'),
-                    subtitle: Text(
-                      'Resolution $_h3Resolution = ~${H3Config.resolution == 7 ? '1.2' : '2.0'} km/cell',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    trailing: const Text('7', style: TextStyle(fontWeight: FontWeight.w700)),
-                  ),
-                  const SizedBox(height: 4),
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: context.bb.dangerSoft,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.warning_amber, size: 16, color: context.bb.danger),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'O⁻ chiếm ~0.1% dân số VN — hệ thống phạt nặng việc dùng O- cho người không thuộc nhóm này.',
-                            style: TextStyle(fontSize: 11, color: context.bb.danger),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // Donation interval rules
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.timer_outlined, size: 20),
-                      SizedBox(width: 8),
-                      Text('Khoảng cách hiến (Điều 6)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  _intervalRow('Máu toàn phần / Hồng cầu', '12 tuần', false),
-                  _intervalRow('Tiểu cầu / Huyết tương', '2 tuần', true),
-                  _intervalRow('Bạch cầu hạt trung tính', '≤3 lần / 7 ngày', false),
-                  const SizedBox(height: 8),
-                  Text(
-                    '⚠️ Phải lọc theo loại hiến gần nhất — không dùng một ngưỡng 12 tuần duy nhất.',
-                    style: TextStyle(fontSize: 11, color: context.bb.danger),
-                  ),
                 ],
               ),
             ),
@@ -428,32 +365,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                 ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _intervalRow(String type, String interval, bool isWarning) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Expanded(child: Text(type, style: const TextStyle(fontSize: 13))),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: isWarning ? context.bb.dangerSoft : context.bb.successSoft,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              interval,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: isWarning ? context.bb.danger : context.bb.success,
               ),
             ),
           ),

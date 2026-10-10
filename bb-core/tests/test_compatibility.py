@@ -15,6 +15,25 @@ from app.services.compatibility import (
     RBC_COMPATIBILITY, PLASMA_COMPATIBILITY,
 )
 
+# Independent donor-plasma → recipient-red-cell ABO rule. RhD does not
+# affect plasma compatibility, so cover every ABO/RhD combination.
+# Ở module level vì comprehension trong class body không thấy được tên
+# định nghĩa ngay trong cùng class body (scoping rule của Python).
+PLASMA_RECIPIENTS = {
+    "O": {"O"},
+    "A": {"O", "A"},
+    "B": {"O", "B"},
+    "AB": {"O", "A", "B", "AB"},
+}
+PLASMA_EXPECTED = [
+    (donor_abo, donor_rh, recipient_abo, recipient_rh,
+     recipient_abo in PLASMA_RECIPIENTS[donor_abo])
+    for donor_abo, donor_rh, recipient_abo, recipient_rh in product(
+        ("O", "A", "B", "AB"), ("-", "+"),
+        ("O", "A", "B", "AB"), ("-", "+"),
+    )
+]
+
 
 class TestRBCCompatibility:
     """8×8 RBC compatibility: standard transfusion medicine table."""
@@ -82,23 +101,6 @@ class TestRBCCompatibility:
 
 class TestPlasmaCompatibility:
     """Plasma compatibility is INVERSE of RBC for ABO."""
-
-    # Independent donor-plasma → recipient-red-cell ABO rule. RhD does not
-    # affect plasma compatibility, so cover every ABO/RhD combination.
-    COMPATIBLE_RECIPIENTS = {
-        "O": {"O"},
-        "A": {"O", "A"},
-        "B": {"O", "B"},
-        "AB": {"O", "A", "B", "AB"},
-    }
-    PLASMA_EXPECTED = [
-        (donor_abo, donor_rh, recipient_abo, recipient_rh,
-         recipient_abo in COMPATIBLE_RECIPIENTS[donor_abo])
-        for donor_abo, donor_rh, recipient_abo, recipient_rh in product(
-            ("O", "A", "B", "AB"), ("-", "+"),
-            ("O", "A", "B", "AB"), ("-", "+"),
-        )
-    ]
 
     @pytest.mark.parametrize("donor_abo,donor_rh,recip_abo,recip_rh,expected", PLASMA_EXPECTED)
     def test_plasma_compatibility(self, donor_abo, donor_rh, recip_abo, recip_rh, expected):

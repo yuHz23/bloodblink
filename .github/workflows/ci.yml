@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  backend:
+    name: bb-core (Python 3.12 + pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bb-core
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Cài dependencies
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Chạy pytest
+        run: python -m pytest -q
+
+  app:
+    name: bb-sos (Flutter analyze + test + APK arm64)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bb-sos
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Pub get
+        run: flutter pub get
+
+      - name: Phân tích tĩnh
+        run: flutter analyze --no-pub
+
+      - name: Chạy test
+        run: flutter test --no-pub
+
+      # Chỉ dựng ABI arm64 (Galaxy S10+ SM-G975F) cho gọn thời gian build.
+      - name: Build APK release arm64
+        run: flutter build apk --release --target-platform android-arm64
+
+      - name: Tải APK lên artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bb-sos-arm64-apk
+          path: bb-sos/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error

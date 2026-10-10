@@ -94,10 +94,11 @@ class TestNotificationFanout:
         await add_donor(staff, "d-a", "A", "+", cell=CELL)
 
         ev = await open_event(staff, abo="AB", rh="+", component_code="RBC")
-        assert ev["donors_notified"] == 0
-
-        r = await staff.post(f"/api/sos/event/{ev['id']}/escalate")
-        assert r.json()["donors_notified"] == 1
+        # Vòng 0 (cùng nhóm AB+) không ai khớp; việc mở ca tự leo thang vòng 1
+        # — A+ hiến được cho AB+ nên được gọi ngay, chứng tỏ việc leo thang mở
+        # nhóm máu chứ không chỉ mở bán kính.
+        assert ev["ring"] == 1
+        assert ev["donors_notified"] == 1
 
     async def test_escalate_stops_at_ring_3(self, staff):
         ev = await open_event(staff, ring=3)

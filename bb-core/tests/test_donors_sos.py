@@ -206,15 +206,14 @@ class TestSosEvent:
         await register(staff, "d-001", "A", "+")
         await staff.post("/api/donors/d-001/verify", json={"verified": True})
 
-        # Bệnh nhân AB+: vòng 0 chỉ nhận AB+ nên không gọi ai
+        # Bệnh nhân AB+: vòng 0 chỉ nhận đúng AB+ nên không gọi ai. Việc mở ca
+        # tự leo thang tới khi có người được gọi (dispatch_initial_rings), và
+        # vòng 1 mở sang nhóm tương hợp nên A+ được gọi — ở vòng 1, không phải 0.
         r0 = await staff.post("/api/sos/event", json={
             "component_code": "RBC", "abo": "AB", "rh": "+", "ring": 0, "h3_cell": CELL})
-        assert r0.json()["donors_notified"] == 0
-
-        # Vòng 1 mở sang nhóm tương hợp: A+ hiến được cho AB+
-        r1 = await staff.post("/api/sos/event", json={
-            "component_code": "RBC", "abo": "AB", "rh": "+", "ring": 1, "h3_cell": CELL})
-        assert r1.json()["donors_notified"] == 1
+        body = r0.json()
+        assert body["donors_notified"] == 1
+        assert body["ring"] == 1
 
     async def test_ineligible_donor_not_called(self, staff):
         recent = datetime.now(timezone.utc) - timedelta(days=10)
@@ -229,13 +228,14 @@ class TestSosEvent:
         await register(staff, "d-001", "O", "+", cell=FAR_CELL)
         await staff.post("/api/donors/d-001/verify", json={"verified": True})
 
+        # Người hiến ở xa (Biên Hoà) nằm ngoài các vòng 0–2 vốn lọc theo ô
+        # lưới. Mở ca tự leo thang hết bốn vòng; vòng 3 là cảnh báo toàn
+        # thành phố nên bỏ lọc vị trí — người xa vẫn được gọi.
         r0 = await staff.post("/api/sos/event", json={
             "component_code": "WB", "abo": "O", "rh": "+", "ring": 0, "h3_cell": CELL})
-        assert r0.json()["donors_notified"] == 0
-
-        r3 = await staff.post("/api/sos/event", json={
-            "component_code": "WB", "abo": "O", "rh": "+", "ring": 3, "h3_cell": CELL})
-        assert r3.json()["donors_notified"] == 1
+        body = r0.json()
+        assert body["ring"] == 3
+        assert body["donors_notified"] == 1
 
 
 class TestSosResponse:

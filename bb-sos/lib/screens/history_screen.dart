@@ -9,7 +9,6 @@ import 'package:hive/hive.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/donor_profile.dart';
-import '../widgets/components.dart';
 
 class HistoryScreen extends StatelessWidget {
   const HistoryScreen({super.key});

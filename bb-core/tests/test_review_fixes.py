@@ -87,11 +87,15 @@ class TestRegisterKhongBiChiemHoSo:
 class TestKhongDemTrungLoiNhan:
     """Lỗi #2 — gửi lại "Nhận lời" từng cộng dồn `accept_count`."""
 
-    async def test_gui_lai_khong_lam_tang_so_dem(self, staff, db_session):
+    async def test_gui_lai_khong_lam_tang_so_dem(self, staff):
+        # Xác minh người hiến để ca SOS mở ra gọi được ngay ở vòng 0. Nếu để
+        # người chưa xác minh, việc mở ca tự leo thang hết bốn vòng mà chẳng
+        # gọi được ai và ca bị đóng luôn thành "expired" — mất tiền đề
+        # "ca còn mở" mà test này cần kiểm tra.
         await staff.post("/api/donors/register", json={"id": "d-200", "abo": "O", "rh": "+"})
+        await staff.post("/api/donors/d-200/verify", json={"verified": True})
         event_id = (await staff.post("/api/sos/event",
                                      json={"ring": 0, "target_count": 2})).json()["id"]
-        await _notify(db_session, event_id, "d-200")
 
         body = {"donor_id": "d-200", "response": "accepted"}
         h = donor_headers("d-200")
