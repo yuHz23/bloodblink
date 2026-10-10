@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { BadgeCheck, Building2, CircleCheck, CircleX, MapPin, RefreshCw } from 'lucide-react'
+import { BadgeCheck, Building2, CircleCheck, CircleX, Droplets, MapPin, RefreshCw } from 'lucide-react'
 import { api, type TransferOffer } from '../lib/api'
 import './Simulation.css'
 
@@ -54,7 +54,11 @@ export default function HospitalSimulator() {
     <main className="sim-page">
       <div className="sim-container">
         <div className="sim-topbar">
-          <a className="sim-brand" href="http://127.0.0.1:5174/map">BLOODBLINK <span aria-hidden="true">/</span> BẢN ĐỒ</a>
+          <a className="sim-brand" href="http://127.0.0.1:5174/map">
+            <Droplets size={23} strokeWidth={2.4} aria-hidden="true" />
+            <span className="sim-brand-copy"><strong>BLOOD-BLINK <em>SOS</em></strong><small>Kết nối những trái tim Việt</small></span>
+            <span className="brand-flag" role="img" aria-label="Cờ Việt Nam">★</span>
+          </a>
           <span className="sim-local-pill"><Building2 size={14} /> CỬA SỔ BỆNH VIỆN · LOCAL</span>
         </div>
 

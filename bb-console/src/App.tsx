@@ -38,8 +38,12 @@ export default function App() {
     <div className="app">
       <aside className="sidebar">
         <div className="logo">
-          <h1>BLOODBLINK</h1>
-          <span>Điều phối máu liên viện</span>
+          <div className="logo-brand-row">
+            <Droplets size={23} strokeWidth={2.4} aria-hidden="true" />
+            <h1>BLOOD-BLINK <em>SOS</em></h1>
+            <span className="brand-flag" role="img" aria-label="Cờ Việt Nam">★</span>
+          </div>
+          <span>Kết nối những trái tim Việt</span>
         </div>
         <nav>
           <NavLink to="/" end className={({ isActive }) => isActive ? 'active' : ''}>
@@ -64,8 +68,7 @@ export default function App() {
           )}
         </nav>
 
-        <div style={{ marginTop: 'auto', padding: '14px 14px 18px',
-                      borderTop: '1px solid rgba(255,255,255,0.09)' }}>
+        <div className="sidebar-bottom">
           <div className="theme-toggle" style={{ marginBottom: 14 }}>
             {THEMES.map(({ key, icon: Icon, label }) => (
               <button
@@ -81,10 +84,10 @@ export default function App() {
             ))}
           </div>
 
-          <div style={{ fontSize: 13, fontWeight: 650, color: '#fff' }}>
+          <div className="sidebar-user-name">
             {isLocalBypass ? 'Chế độ local' : session.fullName ?? session.username}
           </div>
-          <div style={{ fontSize: 11, color: 'var(--sidebar-text-muted)', marginBottom: 11 }}>
+          <div className="sidebar-user-detail">
             {isLocalBypass ? 'Đã bỏ qua đăng nhập trên máy này' : session.facilityName ?? (session.role === 'admin' ? 'Quản trị hệ thống' : 'Nhân viên cơ sở')}
           </div>
           {!isLocalBypass && (
