@@ -143,7 +143,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       labelText: 'API URL',
                       hintText: kDefaultApiUrl,
                       prefixIcon: const Icon(Icons.link),
-                      helperText: 'Mặc định: NUC chạy bb-core 24/7 qua Tailscale. '
+                      helperText: 'Mặc định: laptop chạy bb-core qua Tailscale. '
                           'Máy ảo Android: http://10.0.2.2:8000/api',
                       helperMaxLines: 2,
                     ),

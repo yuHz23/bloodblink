@@ -10,7 +10,7 @@
     <domain-config cleartextTrafficPermitted="true">
         <!-- MagicDNS của laptop chạy bb-core -->
         <domain includeSubdomains="true">laptop-rrqk96mj.tail85e1ba.ts.net</domain>
-        <!-- Máy chủ mặc định của ứng dụng (NUC qua Tailscale) -->
+        <!-- Máy chủ cũ, giữ hỗ trợ cho URL tuỳ chỉnh đã lưu -->
         <domain includeSubdomains="true">desktop-kijp57s.tail85e1ba.ts.net</domain>
         <!-- Địa chỉ CGNAT 100.64.0.0/10 của Tailscale -->
         <domain includeSubdomains="false">100.101.73.36</domain>

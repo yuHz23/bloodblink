@@ -10,27 +10,28 @@
 /// màn Cài đặt). Trước đây nó là hằng số `String.fromEnvironment` cố định lúc
 /// build, nên ô cài đặt đó không có tác dụng gì.
 
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:dio/dio.dart';
 import 'package:hive/hive.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Máy chủ mặc định: NUC chạy bb-core 24/7, truy cập qua Tailscale.
-///
-/// Chuyển từ laptop sang NUC vì laptop phải bật máy suốt và phải giữ một tiến
-/// trình WSL sống thì Postgres mới thông. NUC chạy Postgres bản native cho
-/// Windows, đăng ký thành dịch vụ, và bb-core là một Scheduled Task khởi động
-/// cùng máy — rút điện cắm lại thì tự lên sau khoảng 90 giây.
+/// Backend local hiện chạy trên laptop, truy cập qua Tailscale.
 ///
 /// Ghi đè lúc build bằng: flutter build apk --dart-define=API_URL=...
 const String kDefaultApiUrl = String.fromEnvironment(
   'API_URL',
-  defaultValue: 'http://desktop-kijp57s.tail85e1ba.ts.net:8000/api',
+  defaultValue: 'http://laptop-rrqk96mj.tail85e1ba.ts.net:8000/api',
 );
 
 /// Dự phòng khi điện thoại không phân giải được MagicDNS.
-const String kFallbackApiUrl = 'http://100.106.118.107:8000/api';
+const String kFallbackApiUrl = 'http://100.101.73.36:8000/api';
+
+const _retiredApiUrls = <String>{
+  'http://desktop-kijp57s.tail85e1ba.ts.net:8000/api',
+  'http://100.106.118.107:8000/api',
+};
+final _trailingSlashes = RegExp(r'/+$');
 
 class ApiException implements Exception {
   final String message;
@@ -112,12 +113,26 @@ class ApiService {
   bool _tokenRejected = false;
   bool get tokenRejected => _tokenRejected;
 
+  /// Chuyển URL máy chủ cũ sang laptop hiện tại, giữ nguyên URL tuỳ chỉnh.
+  @visibleForTesting
+  static String resolveSavedBaseUrl(String? savedUrl) {
+    final candidate = savedUrl?.trim();
+    if (candidate == null || candidate.isEmpty) return kDefaultApiUrl;
+
+    final normalized = candidate.replaceFirst(_trailingSlashes, '');
+    return _retiredApiUrls.contains(normalized) ? kDefaultApiUrl : candidate;
+  }
+
   /// Nạp URL và token đã lưu. Gọi một lần trong `main()` trước `runApp`.
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString('api_url');
     if (saved != null && saved.trim().isNotEmpty) {
-      _dio.options.baseUrl = saved.trim();
+      final resolved = resolveSavedBaseUrl(saved);
+      _dio.options.baseUrl = resolved;
+      if (resolved != saved.trim()) {
+        await prefs.setString('api_url', resolved);
+      }
     }
     _token = prefs.getString('donor_token');
     _deviceSecret = prefs.getString('donor_device_secret');
