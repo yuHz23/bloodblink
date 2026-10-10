@@ -38,7 +38,14 @@ async def list_inventory(
     if facility_id:
         stmt = stmt.where(BloodUnit.held_by_facility_id == facility_id)
     if status:
-        stmt = stmt.where(BloodUnit.status == status)
+        # Cột này là enum Postgres, label là TÊN viết hoa (AVAILABLE…) chứ không
+        # phải value ("available"). So sánh trực tiếp với chuỗi khiến asyncpg
+        # từ chối với lỗi 500 "invalid input value for enum unitstatus".
+        try:
+            status_enum = UnitStatus(status.lower())
+        except ValueError:
+            raise HTTPException(status_code=422, detail=f"Trạng thái không hợp lệ: {status}")
+        stmt = stmt.where(BloodUnit.status == status_enum)
     if expires_within_hours is not None:
         cutoff = datetime.now(timezone.utc) + timedelta(hours=expires_within_hours)
         stmt = stmt.where(BloodUnit.expires_at <= cutoff)

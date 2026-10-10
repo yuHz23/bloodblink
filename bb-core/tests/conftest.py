@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from app.database import get_db
 from app.main import app
 from app.models.database import (
-    Base, Donor, SOSEvent, SOSResponse, SOSNotification, SOSReward, AppUser, AuditLog,
+    Base, BloodUnit, Donor, SOSEvent, SOSResponse, SOSNotification, SOSReward, AppUser, AuditLog,
 )
 from app.services.auth import (
     hash_password, create_access_token,
@@ -33,6 +33,7 @@ STAFF_FACILITY = None
 TEST_TABLES = [
     Donor.__table__, SOSEvent.__table__, SOSResponse.__table__,
     SOSNotification.__table__, SOSReward.__table__, AppUser.__table__, AuditLog.__table__,
+    BloodUnit.__table__,
 ]
 
 
