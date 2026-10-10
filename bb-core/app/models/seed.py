@@ -38,15 +38,15 @@ np.random.seed(settings.sim_seed)
 # BV TMHH TP.HCM: 146,329 whole blood units / 6 months → ~800/day avg
 # 5 facilities seeded: share proportional to tier
 _FACILITIES = [
-    {"id": "fac-bv-tmhh",  "name": "Bệnh viện Truyền máu Huyết học TP.HCM", "tier": FacilityTier.REGIONAL,
+    {"id": "fac-bv-tmhh",  "name": "Bệnh viện A", "tier": FacilityTier.REGIONAL,
      "lat": 10.7869, "lon": 106.6854, "daily_units": 520, "safety": {"RBC": 50, "PLT": 30, "FFP": 40}},
-    {"id": "fac-bv-cho-ray", "name": "Bệnh viện Chợ Rẫy", "tier": FacilityTier.HOSPITAL,
+    {"id": "fac-bv-cho-ray", "name": "Bệnh viện B", "tier": FacilityTier.HOSPITAL,
      "lat": 10.7635, "lon": 106.6690, "daily_units": 140, "safety": {"RBC": 30, "PLT": 15, "FFP": 20}},
-    {"id": "fac-bv-ung-buou", "name": "Bệnh viện Ung Bướu TP.HCM", "tier": FacilityTier.HOSPITAL,
+    {"id": "fac-bv-ung-buou", "name": "Bệnh viện C", "tier": FacilityTier.HOSPITAL,
      "lat": 10.7736, "lon": 106.6973, "daily_units": 70, "safety": {"RBC": 15, "PLT": 8, "FFP": 10}},
-    {"id": "fac-bv-nhi-dong", "name": "Bệnh viện Nhi Đồng 1", "tier": FacilityTier.HOSPITAL,
+    {"id": "fac-bv-nhi-dong", "name": "Bệnh viện D", "tier": FacilityTier.HOSPITAL,
      "lat": 10.7905, "lon": 106.6940, "daily_units": 40, "safety": {"RBC": 10, "PLT": 10, "FFP": 5}},
-    {"id": "fac-bv-pham-ngoc-thach", "name": "Bệnh viện Phạm Ngọc Thạch", "tier": FacilityTier.HOSPITAL,
+    {"id": "fac-bv-pham-ngoc-thach", "name": "Bệnh viện E", "tier": FacilityTier.HOSPITAL,
      "lat": 10.7811, "lon": 106.6728, "daily_units": 30, "safety": {"RBC": 8, "PLT": 5, "FFP": 5}},
 ]
 
@@ -302,15 +302,15 @@ _USERS = [
     {"username": "admin", "password": "bloodblink@2026", "role": "admin",
      "full_name": "Quản trị hệ thống", "facility_id": None},
     {"username": "choray", "password": "choray@2026", "role": "facility_staff",
-     "full_name": "Khoa Huyết học — BV Chợ Rẫy", "facility_id": "fac-bv-cho-ray"},
+     "full_name": "Khoa Huyết học — Bệnh viện B", "facility_id": "fac-bv-cho-ray"},
     {"username": "tmhh", "password": "tmhh@2026", "role": "facility_staff",
-     "full_name": "BV Truyền máu Huyết học TP.HCM", "facility_id": "fac-bv-tmhh"},
+     "full_name": "Bệnh viện A", "facility_id": "fac-bv-tmhh"},
     {"username": "ungbuou", "password": "ungbuou@2026", "role": "facility_staff",
-     "full_name": "BV Ung Bướu TP.HCM", "facility_id": "fac-bv-ung-buou"},
+     "full_name": "Bệnh viện C", "facility_id": "fac-bv-ung-buou"},
     {"username": "nhidong", "password": "nhidong@2026", "role": "facility_staff",
-     "full_name": "BV Nhi Đồng 1", "facility_id": "fac-bv-nhi-dong"},
+     "full_name": "Bệnh viện D", "facility_id": "fac-bv-nhi-dong"},
     {"username": "phamngocthach", "password": "pnt@2026", "role": "facility_staff",
-     "full_name": "BV Phạm Ngọc Thạch", "facility_id": "fac-bv-pham-ngoc-thach"},
+     "full_name": "Bệnh viện E", "facility_id": "fac-bv-pham-ngoc-thach"},
 ]
 
 

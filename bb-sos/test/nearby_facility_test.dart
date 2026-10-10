@@ -12,10 +12,10 @@ import 'package:bb_sos/services/nearby_facility_service.dart';
 Facility fac(String id, String name, double lat, double lon) =>
     Facility(id: id, name: name, tier: 'trung ương', lat: lat, lon: lon);
 
-// Toạ độ thật của ba cơ sở trong dữ liệu dự án.
-final choRay = fac('fac-bv-cho-ray', 'BV Chợ Rẫy', 10.7546, 106.6633);
-final tmhh = fac('fac-bv-tmhh', 'BV Truyền máu Huyết học', 10.7625, 106.6602);
-final nhiDong = fac('fac-bv-nhi-dong', 'BV Nhi Đồng 1', 10.7686, 106.6710);
+// Toạ độ thật của ba cơ sở trong dữ liệu dự án (tên đã ẩn danh thành chữ cái).
+final choRay = fac('fac-bv-cho-ray', 'Bệnh viện B', 10.7546, 106.6633);
+final tmhh = fac('fac-bv-tmhh', 'Bệnh viện A', 10.7625, 106.6602);
+final nhiDong = fac('fac-bv-nhi-dong', 'Bệnh viện D', 10.7686, 106.6710);
 
 void main() {
   group('haversine', () {
@@ -26,7 +26,7 @@ void main() {
       );
     });
 
-    test('Chợ Rẫy → Truyền máu Huyết học khoảng 0,9 km', () {
+    test('Bệnh viện B → Bệnh viện A khoảng 0,9 km', () {
       final d = NearbyFacilityService.haversineMeters(
           choRay.lat, choRay.lon, tmhh.lat, tmhh.lon);
       expect(d, greaterThan(700));
@@ -44,7 +44,7 @@ void main() {
 
   group('xếp hạng', () {
     test('xếp theo khoảng cách tăng dần từ vị trí người dùng', () {
-      // Đứng ngay tại Chợ Rẫy.
+      // Đứng ngay tại Bệnh viện B.
       final rows = NearbyFacilityService.rank(
           [nhiDong, tmhh, choRay], choRay.lat, choRay.lon);
 
@@ -65,7 +65,7 @@ void main() {
       expect(rows.length, 3);
       expect(rows.every((r) => r.distanceMeters == null), isTrue);
       expect(rows.map((r) => r.facility.name).toList(),
-          ['BV Chợ Rẫy', 'BV Nhi Đồng 1', 'BV Truyền máu Huyết học']);
+          ['Bệnh viện A', 'Bệnh viện B', 'Bệnh viện D']);
     });
   });
 

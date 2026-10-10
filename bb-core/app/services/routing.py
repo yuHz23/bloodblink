@@ -272,11 +272,11 @@ class RoutingService:
 # ── HCMC facility coordinates (from seed data) ─────────────────
 
 HCMC_FACILITIES = {
-    "fac-bv-tmhh":        {"name": "Bệnh viện Truyền máu Huyết học TP.HCM", "lat": 10.7869, "lon": 106.6854},
-    "fac-bv-cho-ray":     {"name": "Bệnh viện Chợ Rẫy",               "lat": 10.7635, "lon": 106.6690},
-    "fac-bv-ung-buou":    {"name": "Bệnh viện Ung Bướu TP.HCM",       "lat": 10.7736, "lon": 106.6973},
-    "fac-bv-nhi-dong":    {"name": "Bệnh viện Nhi Đồng 1",             "lat": 10.7905, "lon": 106.6940},
-    "fac-bv-pham-ngoc-thach": {"name": "Bệnh viện Phạm Ngọc Thạch",   "lat": 10.7811, "lon": 106.6728},
+    "fac-bv-tmhh":        {"name": "Bệnh viện A", "lat": 10.7869, "lon": 106.6854},
+    "fac-bv-cho-ray":     {"name": "Bệnh viện B",               "lat": 10.7635, "lon": 106.6690},
+    "fac-bv-ung-buou":    {"name": "Bệnh viện C",       "lat": 10.7736, "lon": 106.6973},
+    "fac-bv-nhi-dong":    {"name": "Bệnh viện D",             "lat": 10.7905, "lon": 106.6940},
+    "fac-bv-pham-ngoc-thach": {"name": "Bệnh viện E",   "lat": 10.7811, "lon": 106.6728},
 }
 
 # 20 pairs of facilities for ETA comparison

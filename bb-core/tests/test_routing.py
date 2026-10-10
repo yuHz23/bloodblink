@@ -23,7 +23,7 @@ class TestHaversine:
 
     @pytest.mark.asyncio
     async def test_known_distance_hcm(self):
-        """BV TMHH → BV Chợ Rẫy ≈ 2.8 km straight line."""
+        """Bệnh viện A → Bệnh viện B ≈ 2.8 km straight line."""
         r = StraightLineRouting()
         result = await r.get_route(10.7869, 106.6854, 10.7635, 106.6690, "car")
         # Haversine distance should be roughly 2.5–3.5 km
@@ -197,7 +197,7 @@ class TestETAInMatching:
             collected_at=datetime.now(timezone.utc) - timedelta(days=7),
             expires_at=datetime.now(timezone.utc) + timedelta(days=30),
             held_by_facility_id="fac-bv-cho-ray",
-            facility_name="BV Chợ Rẫy",
+            facility_name="Bệnh viện B",
             facility_opt_in=True,
         )
 

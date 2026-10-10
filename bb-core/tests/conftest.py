@@ -57,7 +57,7 @@ async def session_factory():
             password_hash=hash_password(STAFF_PASSWORD),
             role=ROLE_FACILITY_STAFF,
             facility_id=STAFF_FACILITY,
-            full_name="Khoa Huyết học — BV Chợ Rẫy",
+            full_name="Khoa Huyết học — Bệnh viện B",
             active=True,
         ))
         session.add(AppUser(

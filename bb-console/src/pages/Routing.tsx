@@ -3,11 +3,11 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
 const FACILITIES: Record<string, { name: string }> = {
-  'fac-bv-tmhh': { name: 'BV Truyền máu Huyết học' },
-  'fac-bv-cho-ray': { name: 'BV Chợ Rẫy' },
-  'fac-bv-ung-buou': { name: 'BV Ung Bướu' },
-  'fac-bv-nhi-dong': { name: 'BV Nhi Đồng 1' },
-  'fac-bv-pham-ngoc-thach': { name: 'BV Phạm Ngọc Thạch' },
+  'fac-bv-tmhh': { name: 'Bệnh viện A' },
+  'fac-bv-cho-ray': { name: 'Bệnh viện B' },
+  'fac-bv-ung-buou': { name: 'Bệnh viện C' },
+  'fac-bv-nhi-dong': { name: 'Bệnh viện D' },
+  'fac-bv-pham-ngoc-thach': { name: 'Bệnh viện E' },
 }
 
 export default function Routing() {

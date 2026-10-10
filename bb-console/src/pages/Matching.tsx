@@ -40,7 +40,7 @@ export default function Matching() {
     },
   })
 
-  // Tên cơ sở, để khuyến nghị nói "BV Chợ Rẫy" chứ không phải "fac-bv-cho-ray".
+  // Tên cơ sở, để khuyến nghị nói "Bệnh viện B" chứ không phải "fac-bv-cho-ray".
   const { data: facilities } = useQuery({
     queryKey: ['facilities'],
     queryFn: () => api.listFacilities(),

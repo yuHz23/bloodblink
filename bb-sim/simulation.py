@@ -91,14 +91,14 @@ def random_blood_type(rng):
 # ── HCMC facilities ────────────────────────────────────────────────────
 
 FACILITIES = [
-    {"id": "BV-TMHH-HCM", "name": "BV Truyền máu Huyết học",  "lat": 10.7869, "lon": 106.6649, "daily_collections": 60},
-    {"id": "BV-CH-HCM",    "name": "BV Chợ Rẫy",               "lat": 10.7570, "lon": 106.6639, "daily_collections": 25},
-    {"id": "BV-UC-HCM",    "name": "BV ĐH Y Dược TP.HCM",     "lat": 10.7630, "lon": 106.6810, "daily_collections": 20},
-    {"id": "BV-NHI-HCM",   "name": "BV Nhi Đồng 1",            "lat": 10.7720, "lon": 106.6930, "daily_collections": 10},
-    {"id": "BV-115-HCM",   "name": "BV 115",                   "lat": 10.7715, "lon": 106.6855, "daily_collections": 15},
-    {"id": "BV-CT-HCM",    "name": "BV Ung Bướu TP.HCM",       "lat": 10.7540, "lon": 106.6700, "daily_collections": 10},
-    {"id": "BV-DK1-HCM",   "name": "BV Quận 1",                "lat": 10.7720, "lon": 106.7015, "daily_collections": 5},
-    {"id": "BV-DK5-HCM",   "name": "BV Quận 5",                "lat": 10.7580, "lon": 106.6560, "daily_collections": 5},
+    {"id": "BV-TMHH-HCM", "name": "BV A",  "lat": 10.7869, "lon": 106.6649, "daily_collections": 60},
+    {"id": "BV-CH-HCM",    "name": "BV B",               "lat": 10.7570, "lon": 106.6639, "daily_collections": 25},
+    {"id": "BV-UC-HCM",    "name": "BV C",                     "lat": 10.7630, "lon": 106.6810, "daily_collections": 20},
+    {"id": "BV-NHI-HCM",   "name": "BV D",            "lat": 10.7720, "lon": 106.6930, "daily_collections": 10},
+    {"id": "BV-115-HCM",   "name": "BV E",                   "lat": 10.7715, "lon": 106.6855, "daily_collections": 15},
+    {"id": "BV-CT-HCM",    "name": "BV F",       "lat": 10.7540, "lon": 106.6700, "daily_collections": 10},
+    {"id": "BV-DK1-HCM",   "name": "BV G",                "lat": 10.7720, "lon": 106.7015, "daily_collections": 5},
+    {"id": "BV-DK5-HCM",   "name": "BV H",                "lat": 10.7580, "lon": 106.6560, "daily_collections": 5},
 ]
 
 # Pre-compute haversine distances
