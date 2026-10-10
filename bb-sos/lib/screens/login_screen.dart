@@ -5,6 +5,7 @@ import 'package:hive/hive.dart';
 import 'package:bb_sos/screens/donor_profile_screen.dart';
 import 'package:bb_sos/main.dart'; // For MainNavigation
 import 'package:bb_sos/models/donor_profile.dart';
+import '../widgets/bb_gold_dragon_backdrop.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -29,6 +30,10 @@ class _LoginScreenState extends State<LoginScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              const SizedBox(
+                height: kToolbarHeight,
+                child: BBGoldDragonBackdrop(),
+              ),
               Icon(Icons.water_drop, size: 80, color: context.bb.danger),
               const SizedBox(height: 16),
               Text(

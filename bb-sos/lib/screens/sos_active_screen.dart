@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/donor_profile.dart';
 import '../services/api_service.dart';
 import '../services/sos_inbox_service.dart';
+import '../widgets/bb_gold_dragon_backdrop.dart';
 
 class SosActiveScreen extends StatefulWidget {
   final SosInboxItem call;
@@ -53,6 +54,7 @@ class _SosActiveScreenState extends State<SosActiveScreen> {
 
   String get _urgencyLabel {
     switch (call.urgency) {
+      case 'mock_test': return 'KIỂM THỬ — không phải ca cấp cứu';
       case 'emergency': return 'Cấp cứu — cần trong 2 giờ';
       case 'urgent': return 'Cấp bách — cần trong 6 giờ';
       default: return 'Luân chuyển';
@@ -61,6 +63,7 @@ class _SosActiveScreenState extends State<SosActiveScreen> {
 
   Color get _urgencyColor {
     switch (call.urgency) {
+      case 'mock_test': return context.bb.info;
       case 'emergency': return context.bb.danger;
       case 'urgent': return context.bb.warning;
       default: return context.bb.info;
@@ -72,6 +75,7 @@ class _SosActiveScreenState extends State<SosActiveScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('SOS — Yêu cầu máu'),
+        flexibleSpace: const BBGoldDragonBackdrop(),
         backgroundColor: _urgencyColor,
         foregroundColor: Colors.white,
       ),
@@ -103,7 +107,9 @@ class _SosActiveScreenState extends State<SosActiveScreen> {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Cần ${call.bloodType ?? 'nhóm phù hợp'}',
+                    call.urgency == 'mock_test'
+                        ? 'Kiểm tra thông báo'
+                        : 'Cần ${call.bloodType ?? 'nhóm phù hợp'}',
                     style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 4),
@@ -133,6 +139,20 @@ class _SosActiveScreenState extends State<SosActiveScreen> {
               ),
             ),
           ),
+
+          if (call.urgency == 'mock_test') ...[
+            const SizedBox(height: 12),
+            Card(
+              color: context.bb.infoSoft,
+              child: const ListTile(
+                leading: Icon(Icons.info_outline),
+                title: Text('Mô phỏng riêng cho thiết bị này'),
+                subtitle: Text(
+                  'Không phải ca hiến máu thật. Không gửi phản hồi hay điều hướng tới bệnh viện.',
+                ),
+              ),
+            ),
+          ],
 
           if (_rewardRole != null) ...[
             const SizedBox(height: 14),
@@ -186,24 +206,25 @@ class _SosActiveScreenState extends State<SosActiveScreen> {
                   style: TextStyle(fontSize: 13, color: context.bb.danger)),
             ),
 
-          // Chỉ đường tới nơi đang cần — câu hỏi đầu tiên sau khi đọc lời kêu
-          // gọi luôn là "chỗ đó ở đâu, mình đi bao lâu".
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => NearbyFacilitiesScreen(
-                  highlightFacilityId: call.facilityId,
-                ),
-              )),
-              icon: const Icon(Icons.directions_outlined, size: 18),
-              label: const Text('Xem đường tới bệnh viện'),
+          if (call.urgency != 'mock_test') ...[
+            // Chỉ đường tới nơi đang cần — câu hỏi đầu tiên sau khi đọc lời kêu
+            // gọi luôn là "chỗ đó ở đâu, mình đi bao lâu".
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => NearbyFacilitiesScreen(
+                    highlightFacilityId: call.facilityId,
+                  ),
+                )),
+                icon: const Icon(Icons.directions_outlined, size: 18),
+                label: const Text('Xem đường tới bệnh viện'),
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
+            const SizedBox(height: 12),
 
-          // Nút trả lời
-          if (_rewardRole == null) Row(
+            // Nút trả lời
+            if (_rewardRole == null) Row(
             children: [
               Expanded(
                 child: ElevatedButton.icon(
@@ -229,7 +250,8 @@ class _SosActiveScreenState extends State<SosActiveScreen> {
                 ),
               ),
             ],
-          ),
+            ),
+          ],
 
           const SizedBox(height: 20),
 

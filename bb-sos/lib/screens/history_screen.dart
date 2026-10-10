@@ -9,6 +9,7 @@ import 'package:hive/hive.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/donor_profile.dart';
+import '../widgets/bb_gold_dragon_backdrop.dart';
 
 class HistoryScreen extends StatelessWidget {
   const HistoryScreen({super.key});
@@ -16,7 +17,10 @@ class HistoryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Lịch sử hiến máu')),
+      appBar: AppBar(
+        title: const Text('Lịch sử hiến'),
+        flexibleSpace: const BBGoldDragonBackdrop(),
+      ),
       body: FutureBuilder<List<DonationRecord>>(
         future: _loadHistory(),
         builder: (context, snapshot) {

@@ -14,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/nearby_facility_service.dart';
 import '../theme/bb_colors.dart';
+import '../widgets/bb_gold_dragon_backdrop.dart';
 
 /// Tên tuyến bằng tiếng Việt.
 ///
@@ -102,7 +103,8 @@ class _NearbyFacilitiesScreenState extends State<NearbyFacilitiesScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Bệnh viện gần bạn'),
+        title: const Text('Vị trí'),
+        flexibleSpace: const BBGoldDragonBackdrop(),
         actions: [
           IconButton(
             tooltip: 'Tải lại',

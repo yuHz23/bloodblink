@@ -26,6 +26,7 @@ import '../services/api_service.dart';
 import '../services/location_service.dart';
 import '../services/sos_inbox_service.dart';
 import '../widgets/components.dart';
+import '../widgets/bb_gold_dragon_backdrop.dart';
 import '../main.dart'; // For MainNavigation
 
 class DonorProfileScreen extends ConsumerStatefulWidget {
@@ -104,7 +105,8 @@ class _DonorProfileScreenState extends ConsumerState<DonorProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Hồ sơ người hiến'),
+        title: const Text('Hồ sơ'),
+        flexibleSpace: const BBGoldDragonBackdrop(),
         actions: [
           if (!_isEditing)
             IconButton(

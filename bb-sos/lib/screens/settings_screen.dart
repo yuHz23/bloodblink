@@ -13,6 +13,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../services/api_service.dart';
 import '../services/sos_inbox_service.dart';
 import 'login_screen.dart';
+import '../widgets/bb_gold_dragon_backdrop.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -118,10 +119,90 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Cài đặt')),
+      appBar: AppBar(
+        title: const Text('Thông báo'),
+        flexibleSpace: const BBGoldDragonBackdrop(),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // Notifications
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.notifications_outlined, size: 20),
+                      SizedBox(width: 8),
+                      Text('Cài đặt thông báo', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  SwitchListTile(
+                    value: _pushNotifications,
+                    onChanged: (v) async {
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.setBool('push_notifications', v);
+                      setState(() => _pushNotifications = v);
+                      if (v) await SosInboxService.instance.refresh();
+                    },
+                    title: const Text('Thông báo SOS'),
+                    subtitle: const Text('Cho phép ứng dụng báo lời kêu gọi hiến máu'),
+                  ),
+                  SwitchListTile(
+                    value: _sosAlerts,
+                    onChanged: _pushNotifications ? (v) async {
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.setBool('sos_alerts', v);
+                      setState(() => _sosAlerts = v);
+                      if (v) await SosInboxService.instance.refresh();
+                    } : null,
+                    title: const Text('SOS cấp cứu'),
+                    subtitle: const Text('Leo thang 4 vòng: T+0/10/25/45 phút'),
+                  ),
+                  ListTile(
+                    leading: Icon(
+                      _systemNotificationsEnabled
+                          ? Icons.notifications_active_outlined
+                          : Icons.notifications_off_outlined,
+                      color: _systemNotificationsEnabled
+                          ? context.bb.success
+                          : context.bb.danger,
+                    ),
+                    title: const Text('Quyền thông báo Android'),
+                    subtitle: Text(_systemNotificationsEnabled
+                        ? 'Đang bật trên thiết bị'
+                        : 'Đang tắt — Android sẽ không hiển thị SOS'),
+                    trailing: _systemNotificationsEnabled
+                        ? const Icon(Icons.check_circle_outline)
+                        : TextButton(
+                            onPressed: _loadNotificationPermission,
+                            child: const Text('Kiểm tra'),
+                          ),
+                  ),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _testingNotification ? null : _sendTestNotification,
+                      icon: _testingNotification
+                          ? const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.notifications_active_outlined),
+                      label: const Text('Gửi thông báo thử'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
           // Connection
           Card(
             child: Padding(
@@ -194,83 +275,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                       ),
                     ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // Notifications
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.notifications_outlined, size: 20),
-                      SizedBox(width: 8),
-                      Text('Thông báo', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  SwitchListTile(
-                    value: _pushNotifications,
-                    onChanged: (v) async {
-                      final prefs = await SharedPreferences.getInstance();
-                      await prefs.setBool('push_notifications', v);
-                      setState(() => _pushNotifications = v);
-                      if (v) await SosInboxService.instance.refresh();
-                    },
-                    title: const Text('Thông báo SOS'),
-                    subtitle: const Text('Cho phép ứng dụng báo lời kêu gọi hiến máu'),
-                  ),
-                  SwitchListTile(
-                    value: _sosAlerts,
-                    onChanged: _pushNotifications ? (v) async {
-                      final prefs = await SharedPreferences.getInstance();
-                      await prefs.setBool('sos_alerts', v);
-                      setState(() => _sosAlerts = v);
-                      if (v) await SosInboxService.instance.refresh();
-                    } : null,
-                    title: const Text('SOS cấp cứu'),
-                    subtitle: const Text('Leo thang 4 vòng: T+0/10/25/45 phút'),
-                  ),
-                  ListTile(
-                    leading: Icon(
-                      _systemNotificationsEnabled
-                          ? Icons.notifications_active_outlined
-                          : Icons.notifications_off_outlined,
-                      color: _systemNotificationsEnabled
-                          ? context.bb.success
-                          : context.bb.danger,
-                    ),
-                    title: const Text('Quyền thông báo Android'),
-                    subtitle: Text(_systemNotificationsEnabled
-                        ? 'Đang bật trên thiết bị'
-                        : 'Đang tắt — Android sẽ không hiển thị SOS'),
-                    trailing: _systemNotificationsEnabled
-                        ? const Icon(Icons.check_circle_outline)
-                        : TextButton(
-                            onPressed: _loadNotificationPermission,
-                            child: const Text('Kiểm tra'),
-                          ),
-                  ),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _testingNotification ? null : _sendTestNotification,
-                      icon: _testingNotification
-                          ? const SizedBox.square(
-                              dimension: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.notifications_active_outlined),
-                      label: const Text('Gửi thông báo thử'),
-                    ),
                   ),
                 ],
               ),

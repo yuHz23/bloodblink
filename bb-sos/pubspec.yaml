@@ -3,7 +3,7 @@ description: BLOODBLINK SOS — Donor escalation mobile app (4-ring, H3 geocell,
 
 publish_to: 'none'
 
-version: 1.5.3+12
+version: 1.5.4+13
 
 environment:
   sdk: '>=3.2.0 <4.0.0'

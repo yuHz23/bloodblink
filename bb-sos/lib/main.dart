@@ -19,6 +19,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'screens/donor_profile_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/nearby_facilities_screen.dart';
 import 'screens/login_screen.dart';
 import 'models/donor_profile.dart';
 import 'models/donor_profile.g.dart';
@@ -78,7 +79,7 @@ class BBSOSApp extends StatelessWidget {
       // cũng tối theo. Màu trong các màn hình lấy từ `context.bb` (xem
       // theme/bb_colors.dart) nên đổi chủ đề là đổi theo, không còn chữ xám
       // đậm nằm trên nền tối như trước.
-      themeMode: ThemeMode.system,
+      themeMode: ThemeMode.light,
       home: isLoggedIn ? const MainNavigation() : const LoginScreen(),
     );
   }
@@ -87,9 +88,10 @@ class BBSOSApp extends StatelessWidget {
   ///
   /// Đỏ máu là màu thương hiệu nhưng KHÔNG dùng làm màu nền lớn: giao diện y tế
   /// đọc dưới áp lực thì nền phải trung tính, đỏ để dành cho thứ thật sự khẩn.
-  static const _bbRed = Color(0xFFC62828);
+  static const _bbRed = Color(0xFFCE272E);
   static const _bbRedDark = Color(0xFFEF5F76);
-  static const _bbBlue = Color(0xFF1D4ED8);
+  static const _bbGold = Color(0xFFC28B2C);
+  static const _bbNavy = Color(0xFF102B52);
   static const _bbBlueDark = Color(0xFF7EA6FF);
 
   ThemeData _buildTheme({required Brightness brightness}) {
@@ -100,13 +102,14 @@ class BBSOSApp extends StatelessWidget {
       brightness: brightness,
     ).copyWith(
       primary: dark ? _bbRedDark : _bbRed,
-      secondary: dark ? _bbBlueDark : _bbBlue,
-      surface: dark ? const Color(0xFF171C25) : Colors.white,
+      secondary: dark ? _bbBlueDark : _bbGold,
+      surface: dark ? const Color(0xFF171C25) : const Color(0xFFFFFCF6),
+      onSurface: dark ? const Color(0xFFE9ECF1) : _bbNavy,
       onPrimary: dark ? const Color(0xFF2A0B10) : Colors.white,
     );
 
-    final background = dark ? const Color(0xFF0E1116) : const Color(0xFFF4F5F7);
-    final outline = dark ? const Color(0xFF2A323F) : const Color(0xFFE3E6EA);
+    final background = dark ? const Color(0xFF0E1116) : const Color(0xFFFFF9EF);
+    final outline = dark ? const Color(0xFF2A323F) : const Color(0xFFEFE4CF);
 
     // Be Vietnam Pro dựng riêng cho tiếng Việt — dấu không bị chồng lên chữ hoa
     // như Inter. google_fonts tải phông lúc chạy rồi lưu lại; lần chạy đầu mà
@@ -133,9 +136,10 @@ class BBSOSApp extends StatelessWidget {
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0.5,
-        centerTitle: true,
+        centerTitle: false,
+        titleSpacing: 20,
         titleTextStyle: text.titleMedium?.copyWith(
-            fontWeight: FontWeight.w700, color: scheme.onSurface),
+            fontWeight: FontWeight.w700, color: scheme.onSurface, fontSize: 19),
       ),
       cardTheme: CardThemeData(
         elevation: 0,
@@ -195,11 +199,18 @@ class BBSOSApp extends StatelessWidget {
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: scheme.surface,
         surfaceTintColor: Colors.transparent,
-        indicatorColor: scheme.primary.withValues(alpha: dark ? 0.24 : 0.14),
+        indicatorColor: dark
+            ? scheme.primary.withValues(alpha: 0.24)
+            : _bbGold.withValues(alpha: 0.15),
         elevation: 0,
-        height: 66,
+        height: 72,
+        iconTheme: WidgetStateProperty.resolveWith((states) => IconThemeData(
+              color: states.contains(WidgetState.selected)
+                  ? scheme.primary
+                  : (dark ? const Color(0xFF8B94A3) : const Color(0xFF667487)),
+            )),
         labelTextStyle: WidgetStatePropertyAll(
-          text.labelSmall?.copyWith(fontWeight: FontWeight.w600),
+          text.labelSmall?.copyWith(fontWeight: FontWeight.w600, fontSize: 11),
         ),
       ),
       snackBarTheme: SnackBarThemeData(
@@ -227,6 +238,7 @@ class _MainNavigationState extends State<MainNavigation> {
     DonorProfileScreen(),
     HistoryScreen(),
     SettingsScreen(),
+    NearbyFacilitiesScreen(),
   ];
 
   @override
@@ -248,9 +260,14 @@ class _MainNavigationState extends State<MainNavigation> {
             label: 'Lịch sử',
           ),
           NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
-            label: 'Cài đặt',
+            icon: Icon(Icons.notifications_none),
+            selectedIcon: Icon(Icons.notifications),
+            label: 'Thông báo',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.location_on_outlined),
+            selectedIcon: Icon(Icons.location_on),
+            label: 'Vị trí',
           ),
         ],
       ),

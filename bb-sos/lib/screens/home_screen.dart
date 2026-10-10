@@ -18,6 +18,7 @@ import '../models/donor_profile.dart';
 import '../services/api_service.dart';
 import '../services/sos_inbox_service.dart';
 import '../widgets/components.dart';
+import '../widgets/bb_gold_dragon_backdrop.dart';
 import 'donor_profile_screen.dart';
 import 'nearby_facilities_screen.dart';
 import 'sos_active_screen.dart';
@@ -49,6 +50,7 @@ class HomeScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('BLOODBLINK SOS'),
+        flexibleSpace: const BBGoldDragonBackdrop(),
         actions: [
           // Online/offline indicator
           Padding(

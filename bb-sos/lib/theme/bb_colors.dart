@@ -58,26 +58,26 @@ class BBColors extends ThemeExtension<BBColors> {
     required this.purple,
   });
 
-  /// Giữ nguyên bảng màu cũ để chủ đề sáng không đổi diện mạo.
+  /// Theme 1: ivory, navy, blood red, and antique gold.
   static const light = BBColors(
-    strong: Color(0xFF111827),
-    body: Color(0xFF4B5563),
-    muted: Color(0xFF6B7280),
-    faint: Color(0xFF9CA3AF),
-    border: Color(0xFFE5E7EB),
-    surfaceAlt: Color(0xFFF3F4F6),
-    danger: Color(0xFFDC2626),
-    dangerSoft: Color(0xFFFEE2E2),
-    success: Color(0xFF16A34A),
-    successDeep: Color(0xFF059669),
-    successSoft: Color(0xFFF0FDF4),
-    info: Color(0xFF2563EB),
-    infoBright: Color(0xFF3B82F6),
-    infoDeep: Color(0xFF1E40AF),
-    infoSoft: Color(0xFFEFF6FF),
-    warning: Color(0xFFF59E0B),
-    warningSoft: Color(0xFFFFFBEB),
-    purple: Color(0xFF7C3AED),
+    strong: Color(0xFF102B52),
+    body: Color(0xFF40536B),
+    muted: Color(0xFF65738A),
+    faint: Color(0xFF8F9BAA),
+    border: Color(0xFFEFE4CF),
+    surfaceAlt: Color(0xFFFBF4E6),
+    danger: Color(0xFFCE272E),
+    dangerSoft: Color(0xFFFDECE8),
+    success: Color(0xFF238B61),
+    successDeep: Color(0xFF17784D),
+    successSoft: Color(0xFFEAF5E9),
+    info: Color(0xFF35577B),
+    infoBright: Color(0xFF477AA6),
+    infoDeep: Color(0xFF1F3D67),
+    infoSoft: Color(0xFFEEF4F7),
+    warning: Color(0xFFBA7B1B),
+    warningSoft: Color(0xFFFFF3DA),
+    purple: Color(0xFF7559A0),
   );
 
   /// Chữ sáng lên, nền trạng thái tối lại — tương phản tối thiểu 4.5:1 trên
