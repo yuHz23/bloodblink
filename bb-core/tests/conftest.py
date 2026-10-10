@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from app.database import get_db
 from app.main import app
 from app.models.database import (
-    Base, Donor, SOSEvent, SOSResponse, SOSNotification, AppUser, AuditLog,
+    Base, Donor, SOSEvent, SOSResponse, SOSNotification, SOSReward, AppUser, AuditLog,
 )
 from app.services.auth import (
     hash_password, create_access_token,
@@ -32,7 +32,7 @@ STAFF_FACILITY = None
 # SQLite không cưỡng chế khoá ngoại nên vẫn chèn được.
 TEST_TABLES = [
     Donor.__table__, SOSEvent.__table__, SOSResponse.__table__,
-    SOSNotification.__table__, AppUser.__table__, AuditLog.__table__,
+    SOSNotification.__table__, SOSReward.__table__, AppUser.__table__, AuditLog.__table__,
 ]
 
 
@@ -110,3 +110,8 @@ async def staff(client):
 def donor_headers(donor_id: str) -> dict:
     """Header của chính người hiến — token do /donors/register cấp."""
     return {"Authorization": f"Bearer {create_access_token(donor_id, ROLE_DONOR)}"}
+
+
+def admin_headers() -> dict:
+    """Header quản trị cho test dữ liệu SOS chưa gắn cơ sở cụ thể."""
+    return {"Authorization": f"Bearer {create_access_token('test-admin', ROLE_ADMIN)}"}

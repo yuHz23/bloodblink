@@ -131,9 +131,13 @@ export default function SOS() {
   )
   const pendingDonationCount = (responders ?? []).filter(responder => {
     const status = rewardByDonor.get(responder.donor_id)?.status
-    return !status || status === 'awaiting_choice' || status === 'awaiting_donation'
+    return !['compensation_proposed', 'mock_ready', 'not_completed'].includes(status ?? '')
   }).length
-  const canComplete = responders !== undefined && rewards !== undefined && pendingDonationCount === 0
+  const canComplete = event !== undefined
+    && ['fulfilled', 'expired'].includes(event.status)
+    && responders !== undefined
+    && rewards !== undefined
+    && pendingDonationCount === 0
 
   const refreshRewardData = async () => {
     await Promise.all([
@@ -349,7 +353,11 @@ export default function SOS() {
           {complete.error && <p role="alert" style={{ color: 'var(--bb-red)' }}>{complete.error.message}</p>}
           {event && !['completed', 'cancelled'].includes(event.status) && !canComplete && (
             <p role="status" style={{ color: 'var(--text-muted)', fontSize: 12.5 }}>
-              Còn {pendingDonationCount} người cần xác nhận kết quả hiến trước khi hoàn tất ca.
+              {!['fulfilled', 'expired'].includes(event.status)
+                ? 'Ca cần dừng tuyển người hiến trước khi hoàn tất.'
+                : responders === undefined || rewards === undefined
+                  ? 'Đang tải xác nhận hiến và phương án hỗ trợ.'
+                  : `Còn ${pendingDonationCount} người nhận lời cần xử lý trước khi hoàn tất ca.`}
             </p>
           )}
 

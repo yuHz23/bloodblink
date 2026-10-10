@@ -11,7 +11,7 @@ import h3
 
 from app.config import settings
 from app.services.scheduler import due_ring, escalate_due_events
-from tests.conftest import donor_headers
+from tests.conftest import admin_headers, donor_headers
 
 CELL = h3.latlng_to_cell(10.7626, 106.6602, settings.h3_resolution)
 NEIGHBOUR = [c for c in h3.grid_disk(CELL, 1) if c != CELL][0]
@@ -64,7 +64,8 @@ class TestNotificationFanout:
         ev = await open_event(staff)
         assert ev["donors_notified"] == 1
 
-        rows = (await staff.get(f"/api/sos/event/{ev['id']}/notifications")).json()
+        rows = (await staff.get(f"/api/sos/event/{ev['id']}/notifications",
+                                headers=admin_headers())).json()
         assert [r["donor_id"] for r in rows] == ["d-001"]
         assert rows[0]["ring"] == 0
         assert rows[0]["channel"] == "store"
@@ -83,7 +84,8 @@ class TestNotificationFanout:
         assert r.json()["ring"] == 1
         assert r.json()["donors_notified"] == 1        # chỉ d-mid, không gọi lại d-near
 
-        rows = (await staff.get(f"/api/sos/event/{ev['id']}/notifications")).json()
+        rows = (await staff.get(f"/api/sos/event/{ev['id']}/notifications",
+                                headers=admin_headers())).json()
         assert len(rows) == 2
         assert {r["donor_id"]: r["ring"] for r in rows} == {"d-near": 0, "d-mid": 1}
 
@@ -226,7 +228,8 @@ class TestScheduler:
         await db_session.refresh(event)
         assert event.ring == 2
 
-        rows = (await staff.get(f"/api/sos/event/{ev['id']}/notifications")).json()
+        rows = (await staff.get(f"/api/sos/event/{ev['id']}/notifications",
+                                headers=admin_headers())).json()
         assert {r["donor_id"]: r["ring"] for r in rows} == {"d-near": 0, "d-mid": 1}
 
     async def test_scheduler_leaves_fresh_event_alone(self, staff, db_session):

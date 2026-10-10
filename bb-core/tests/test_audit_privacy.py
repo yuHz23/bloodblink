@@ -13,14 +13,10 @@ import pytest_asyncio
 
 from app.config import settings
 from app.services import audit
-from app.services.auth import create_access_token, ROLE_ADMIN
-from tests.conftest import donor_headers
+from app.services.auth import create_access_token
+from tests.conftest import admin_headers, donor_headers
 
 CELL = h3.latlng_to_cell(10.7626, 106.6602, settings.h3_resolution)
-
-
-def admin_headers() -> dict:
-    return {"Authorization": f"Bearer {create_access_token('user-admin', ROLE_ADMIN)}"}
 
 
 async def add_donor(staff, donor_id, abo="O", rh="+"):
@@ -135,7 +131,8 @@ class TestContactReveal:
                                "contact_phone": "0900000000"},
                          headers=donor_headers("d-001"))
 
-        rows = (await staff.get(f"/api/sos/event/{ev['id']}/responses")).json()
+        rows = (await staff.get(f"/api/sos/event/{ev['id']}/responses",
+                                headers=admin_headers())).json()
         assert rows == [], "người từ chối không được có mặt, càng không được lưu số"
 
     async def test_accepting_reveals_contact_to_facility(self, staff):
@@ -148,7 +145,8 @@ class TestContactReveal:
                                "contact_note": "có mặt sau 30 phút"},
                          headers=donor_headers("d-001"))
 
-        rows = (await staff.get(f"/api/sos/event/{ev['id']}/responses")).json()
+        rows = (await staff.get(f"/api/sos/event/{ev['id']}/responses",
+                                headers=admin_headers())).json()
         assert len(rows) == 1
         assert rows[0]["donor_id"] == "d-001"
         assert rows[0]["contact_phone"] == "0912345678"
@@ -163,7 +161,8 @@ class TestContactReveal:
                          json={"donor_id": "d-001", "response": "accepted"},
                          headers=donor_headers("d-001"))
 
-        rows = (await staff.get(f"/api/sos/event/{ev['id']}/responses")).json()
+        rows = (await staff.get(f"/api/sos/event/{ev['id']}/responses",
+                                headers=admin_headers())).json()
         assert len(rows) == 1
         assert rows[0]["contact_phone"] is None
 
@@ -180,7 +179,8 @@ class TestContactReveal:
                          json={"donor_id": "d-001", "response": "accepted",
                                "contact_phone": "0912345678"},
                          headers=donor_headers("d-001"))
-        await staff.get(f"/api/sos/event/{ev['id']}/responses")
+        await staff.get(f"/api/sos/event/{ev['id']}/responses",
+                        headers=admin_headers())
 
         rows = (await staff.get("/api/audit", params={"action": audit.CONTACT_REVEAL},
                                 headers=admin_headers())).json()

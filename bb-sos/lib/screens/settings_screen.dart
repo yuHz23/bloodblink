@@ -12,6 +12,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../models/donor_profile.dart';
 import '../services/api_service.dart';
+import '../services/sos_inbox_service.dart';
 import 'login_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -32,6 +33,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _checking = false;
   bool _pushNotifications = true;
   bool _sosAlerts = true;
+  bool _systemNotificationsEnabled = true;
+  bool _testingNotification = false;
   bool _locationSharing = false;
   int _h3Resolution = 7;
   int _offlineQueueSize = 0;
@@ -41,6 +44,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     _loadSettings();
     _loadVersion();
+    _loadNotificationPermission();
+  }
+
+  Future<void> _loadNotificationPermission() async {
+    final enabled = await SosInboxService.instance.notificationsEnabled();
+    if (mounted) setState(() => _systemNotificationsEnabled = enabled);
+  }
+
+  Future<void> _sendTestNotification() async {
+    setState(() => _testingNotification = true);
+    final enabled = await SosInboxService.instance.showTestNotification();
+    await _loadNotificationPermission();
+    if (!mounted) return;
+    setState(() => _testingNotification = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(enabled
+            ? 'Đã gửi thông báo thử. Kiểm tra thanh thông báo của điện thoại.'
+            : 'Android chưa cấp quyền thông báo cho BLOODBLINK SOS.'),
+      ),
+    );
   }
 
   /// Lấy phiên bản THẬT của bản đang cài.
@@ -202,9 +226,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       final prefs = await SharedPreferences.getInstance();
                       await prefs.setBool('push_notifications', v);
                       setState(() => _pushNotifications = v);
+                      if (v) await SosInboxService.instance.refresh();
                     },
-                    title: const Text('Thông báo đẩy (FCM)'),
-                    subtitle: const Text('Nhận SOS khi có nhu cầu máu khẩn cấp'),
+                    title: const Text('Thông báo SOS'),
+                    subtitle: const Text('Cho phép ứng dụng báo lời kêu gọi hiến máu'),
                   ),
                   SwitchListTile(
                     value: _sosAlerts,
@@ -212,9 +237,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       final prefs = await SharedPreferences.getInstance();
                       await prefs.setBool('sos_alerts', v);
                       setState(() => _sosAlerts = v);
+                      if (v) await SosInboxService.instance.refresh();
                     } : null,
                     title: const Text('SOS cấp cứu'),
                     subtitle: const Text('Leo thang 4 vòng: T+0/10/25/45 phút'),
+                  ),
+                  ListTile(
+                    leading: Icon(
+                      _systemNotificationsEnabled
+                          ? Icons.notifications_active_outlined
+                          : Icons.notifications_off_outlined,
+                      color: _systemNotificationsEnabled
+                          ? context.bb.success
+                          : context.bb.danger,
+                    ),
+                    title: const Text('Quyền thông báo Android'),
+                    subtitle: Text(_systemNotificationsEnabled
+                        ? 'Đang bật trên thiết bị'
+                        : 'Đang tắt — Android sẽ không hiển thị SOS'),
+                    trailing: _systemNotificationsEnabled
+                        ? const Icon(Icons.check_circle_outline)
+                        : TextButton(
+                            onPressed: _loadNotificationPermission,
+                            child: const Text('Kiểm tra'),
+                          ),
+                  ),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _testingNotification ? null : _sendTestNotification,
+                      icon: _testingNotification
+                          ? const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.notifications_active_outlined),
+                      label: const Text('Gửi thông báo thử'),
+                    ),
                   ),
                 ],
               ),

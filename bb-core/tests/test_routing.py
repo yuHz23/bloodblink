@@ -87,9 +87,9 @@ class TestRoutingService:
         assert route.provider == "straight_line"
         assert route.geometry == [[106.6854, 10.7869], [106.6690, 10.7635]]
 
-    def test_default_provider_is_straight_line(self):
+    def test_default_provider_is_osrm(self):
         svc = RoutingService()
-        assert svc._provider.get_name() == "straight_line (haversine)"
+        assert svc._provider.get_name() == "osrm"
 
     def test_swap_to_osrm(self):
         svc = RoutingService()
@@ -106,7 +106,7 @@ class TestRoutingService:
     @pytest.mark.asyncio
     async def test_compare_eta(self):
         """Compare ETA should return both straight-line and road results."""
-        svc = RoutingService()
+        svc = RoutingService(provider=StraightLineRouting())
         result = await svc.compare_eta(10.7869, 106.6854, 10.7635, 106.6690)
         assert "straight_line" in result
         assert "road" in result
@@ -117,7 +117,7 @@ class TestRoutingService:
     @pytest.mark.asyncio
     async def test_compare_eta_returns_positive_durations(self):
         """Both ETA modes should return positive values."""
-        svc = RoutingService()
+        svc = RoutingService(provider=StraightLineRouting())
         for from_id, to_id in ETA_COMPARISON_PAIRS[:5]:  # Check first 5 pairs
             from_fac = HCMC_FACILITIES[from_id]
             to_fac = HCMC_FACILITIES[to_id]

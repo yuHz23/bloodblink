@@ -4,7 +4,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -177,6 +177,10 @@ async def inventory_summary(db: AsyncSession = Depends(get_db)):
             BloodUnit.status,
             func.count(BloodUnit.id).label("count"),
         )
+        .where(or_(
+            BloodUnit.status != UnitStatus.AVAILABLE,
+            BloodUnit.expires_at > now,
+        ))
         .group_by(BloodUnit.component_code, BloodUnit.status)
         .order_by(BloodUnit.component_code, BloodUnit.status)
     )
@@ -193,7 +197,10 @@ async def inventory_summary(db: AsyncSession = Depends(get_db)):
             BloodUnit.rh,
             func.count(BloodUnit.id).label("count"),
         )
-        .where(BloodUnit.status == UnitStatus.AVAILABLE)
+        .where(
+            BloodUnit.status == UnitStatus.AVAILABLE,
+            BloodUnit.expires_at > now,
+        )
         .group_by(BloodUnit.abo, BloodUnit.rh)
         .order_by(BloodUnit.abo, BloodUnit.rh)
     )
@@ -232,7 +239,10 @@ async def inventory_summary(db: AsyncSession = Depends(get_db)):
             BloodUnit.component_code,
             func.count(BloodUnit.id).label("count"),
         )
-        .where(BloodUnit.status == UnitStatus.AVAILABLE)
+        .where(
+            BloodUnit.status == UnitStatus.AVAILABLE,
+            BloodUnit.expires_at > now,
+        )
         .group_by(BloodUnit.held_by_facility_id, BloodUnit.component_code)
         .order_by(BloodUnit.held_by_facility_id)
     )

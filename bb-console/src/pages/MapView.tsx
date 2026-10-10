@@ -6,7 +6,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import {
   api, type Donor, type Facility, type FacilityStock, type MatchResponse,
-  type NearbyDonor, type SosEvent, type DensityCell, type TransferOffer, type AcceptedDonorCell,
+  type NearbyDonor, type SosEvent, type SosReward, type DensityCell, type TransferOffer, type AcceptedDonorCell,
 } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { COMPONENT_LABELS, URGENCY_LABELS } from '../lib/constants'
@@ -259,10 +259,41 @@ export default function MapView() {
       : undefined,
     [activeSosEvents, trackableSosEvents, dispatchRun?.requestId, sosTrackingEnabled],
   )
+  const canManageTrackedSos = session?.role === 'admin'
+    || (!!trackedSosEvent?.facility_id && session?.facilityId === trackedSosEvent.facility_id)
+  const trackedSosRespondersQuery = useQuery({
+    queryKey: ['sos-responders', trackedSosEvent?.id],
+    queryFn: () => api.listSosResponders(trackedSosEvent!.id),
+    enabled: !!trackedSosEvent && canManageTrackedSos,
+    refetchInterval: 5000,
+    refetchIntervalInBackground: true,
+  })
+  const trackedSosRewardsQuery = useQuery({
+    queryKey: ['sos-rewards', trackedSosEvent?.id],
+    queryFn: () => api.listSosRewards(trackedSosEvent!.id),
+    enabled: !!trackedSosEvent && canManageTrackedSos,
+    refetchInterval: 5000,
+    refetchIntervalInBackground: true,
+  })
+  const trackedRewardByDonor = new Map<string, SosReward['status']>(
+    (trackedSosRewardsQuery.data ?? []).map(
+      (reward): [string, SosReward['status']] => [reward.donor_id, reward.status],
+    ),
+  )
+  const trackedPendingFollowups = (trackedSosRespondersQuery.data ?? []).filter(responder =>
+    !['compensation_proposed', 'mock_ready', 'not_completed'].includes(
+      trackedRewardByDonor.get(responder.donor_id) ?? '',
+    ),
+  ).length
+  const canCompleteTrackedSos = !!trackedSosEvent
+    && ['fulfilled', 'expired'].includes(trackedSosEvent.status)
+    && trackedSosRespondersQuery.data !== undefined
+    && trackedSosRewardsQuery.data !== undefined
+    && trackedPendingFollowups === 0
   const trackedSosNotificationsQuery = useQuery({
     queryKey: ['map-sos-notifications', trackedSosEvent?.id],
     queryFn: () => api.listSosNotifications(trackedSosEvent!.id),
-    enabled: !!trackedSosEvent && trackedSosEvent.ring >= 3,
+    enabled: !!trackedSosEvent && canManageTrackedSos && trackedSosEvent.ring >= 3,
     refetchInterval: 3000,
     refetchIntervalInBackground: true,
   })
@@ -917,11 +948,11 @@ export default function MapView() {
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button className="btn btn-secondary" type="button" onClick={stopSosTracking}>Tắt theo dõi</button>
-              {(session?.role === 'admin' || (!!trackedSosEvent.facility_id && session?.facilityId === trackedSosEvent.facility_id)) && (
+              {canManageTrackedSos && (
                 <button
                   className="btn btn-danger"
                   type="button"
-                  disabled={completeSos.isPending}
+                  disabled={completeSos.isPending || !canCompleteTrackedSos}
                   onClick={() => {
                     if (window.confirm('Đánh dấu ca SOS đã hoàn tất? Ca sẽ ngừng mời người hiến và vẫn được lưu trong lịch sử.')) {
                       completeSos.mutate(trackedSosEvent.id)
@@ -936,6 +967,15 @@ export default function MapView() {
               </Link>
             </div>
           </div>
+          {canManageTrackedSos && !canCompleteTrackedSos && (
+            <p role="status" style={{ color: 'var(--text-muted)', fontSize: 12.5, marginBottom: 0 }}>
+              {!['fulfilled', 'expired'].includes(trackedSosEvent.status)
+                ? 'Ca cần dừng tuyển người hiến trước khi hoàn tất.'
+                : trackedSosRespondersQuery.data === undefined || trackedSosRewardsQuery.data === undefined
+                  ? 'Đang tải xác nhận hiến và phương án hỗ trợ.'
+                  : `Còn ${trackedPendingFollowups} người nhận lời cần xử lý trước khi hoàn tất.`}
+            </p>
+          )}
           {completeSos.error && <p role="alert" style={{ color: 'var(--bb-red)', marginBottom: 0 }}>{completeSos.error.message}</p>}
           <details style={{ marginTop: 12 }}>
             <summary style={{ cursor: 'pointer', fontWeight: 650, padding: '8px 0' }}>Vòng SOS · đếm ngược và điều khiển thủ công</summary>

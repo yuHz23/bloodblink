@@ -35,6 +35,7 @@ async def get_eta(
         "duration_min": round(result.duration_s / 60, 1),
         "provider": result.provider,
         "routing_mode": result.mode,
+        # Service providers return GeoJSON [longitude, latitude]; Leaflet consumes [latitude, longitude].
         "geometry": [[coordinate[1], coordinate[0]] for coordinate in (result.geometry or [])],
     }
 

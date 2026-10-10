@@ -70,6 +70,39 @@ class SosInboxService with WidgetsBindingObserver {
     _ready = true;
   }
 
+  Future<bool> notificationsEnabled() async {
+    await init();
+    final android = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    return await android?.areNotificationsEnabled() ?? true;
+  }
+
+  Future<bool> requestNotificationsPermission() async {
+    await init();
+    final android = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    return await android?.requestNotificationsPermission() ?? true;
+  }
+
+  Future<bool> showTestNotification() async {
+    if (!await requestNotificationsPermission()) return false;
+    await _plugin.show(
+      0x4242534f,
+      'Thông báo đã bật',
+      'Điện thoại có thể hiển thị thông báo BLOODBLINK SOS.',
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channel.id,
+          _channel.name,
+          channelDescription: _channel.description,
+          importance: Importance.max,
+          priority: Priority.high,
+        ),
+      ),
+    );
+    return true;
+  }
+
   /// Bắt đầu theo dõi hộp thư. Gọi sau khi người dùng đã có hồ sơ.
   Future<void> start() async {
     await init();
@@ -173,10 +206,15 @@ class SosInboxService with WidgetsBindingObserver {
       final items = await _api.fetchSosInbox(donorId);
       pending.value = items;
 
+      final prefs = await SharedPreferences.getInstance();
+      final notificationsEnabled = prefs.getBool('push_notifications') ?? true;
+      final sosAlertsEnabled = prefs.getBool('sos_alerts') ?? true;
+
       for (final item in items) {
         if (_announced.contains(item.notificationId)) continue;
-        _announced.add(item.notificationId);
+        if (!notificationsEnabled || !sosAlertsEnabled) continue;
         await _show(item);
+        _announced.add(item.notificationId);
       }
 
       // Lời kêu gọi đã đóng thì quên đi, để lần sau có sự kiện mới vẫn báo.

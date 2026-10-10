@@ -6,6 +6,7 @@ This is the table that a hematologist reviewer will check first.
 """
 
 import random
+from itertools import product
 
 import pytest
 from app.services.compatibility import (
@@ -82,26 +83,21 @@ class TestRBCCompatibility:
 class TestPlasmaCompatibility:
     """Plasma compatibility is INVERSE of RBC for ABO."""
 
+    # Independent donor-plasma → recipient-red-cell ABO rule. RhD does not
+    # affect plasma compatibility, so cover every ABO/RhD combination.
+    COMPATIBLE_RECIPIENTS = {
+        "O": {"O"},
+        "A": {"O", "A"},
+        "B": {"O", "B"},
+        "AB": {"O", "A", "B", "AB"},
+    }
     PLASMA_EXPECTED = [
-        # O plasma → universal plasma donor (all recipients)
-        ("O", "-", "O", "-", True),   ("O", "-", "O", "+", True),
-        ("O", "-", "A", "-", True),   ("O", "-", "A", "+", True),
-        ("O", "-", "B", "-", True),   ("O", "-", "B", "+", True),
-        ("O", "-", "AB", "-", True),  ("O", "-", "AB", "+", True),
-
-        # AB plasma → only AB recipients
-        ("AB", "+", "O", "-", False),  ("AB", "+", "O", "+", False),
-        ("AB", "+", "A", "-", False),  ("AB", "+", "A", "+", False),
-        ("AB", "+", "B", "-", False),  ("AB", "+", "B", "+", False),
-        ("AB", "+", "AB", "-", True),  ("AB", "+", "AB", "+", True),
-
-        # A plasma → A or AB
-        ("A", "+", "A", "+", True),   ("A", "+", "AB", "+", True),
-        ("A", "+", "O", "+", False),  ("A", "+", "B", "+", False),
-
-        # B plasma → B or AB
-        ("B", "+", "B", "+", True),   ("B", "+", "AB", "+", True),
-        ("B", "+", "O", "+", False),  ("B", "+", "A", "+", False),
+        (donor_abo, donor_rh, recipient_abo, recipient_rh,
+         recipient_abo in COMPATIBLE_RECIPIENTS[donor_abo])
+        for donor_abo, donor_rh, recipient_abo, recipient_rh in product(
+            ("O", "A", "B", "AB"), ("-", "+"),
+            ("O", "A", "B", "AB"), ("-", "+"),
+        )
     ]
 
     @pytest.mark.parametrize("donor_abo,donor_rh,recip_abo,recip_rh,expected", PLASMA_EXPECTED)

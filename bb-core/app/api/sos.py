@@ -65,8 +65,34 @@ def _event_out(event: SOSEvent, *, message: str = "", notified: int = 0) -> SOSE
 
 
 def _require_event_facility(event: SOSEvent, principal: Principal) -> None:
-    if principal.role != "admin" and event.facility_id and principal.facility_id != event.facility_id:
-        raise HTTPException(status_code=403, detail="Chỉ cơ sở phát SOS mới quản lý được phương án quà")
+    if principal.role != "admin" and (
+        not event.facility_id or principal.facility_id != event.facility_id
+    ):
+        raise HTTPException(status_code=403, detail="Chỉ cơ sở phát SOS mới được truy cập dữ liệu của ca này")
+
+
+async def _pending_reward_followup_count(db: AsyncSession, event_id: str) -> int:
+    accepted_donors = set((await db.execute(
+        select(SOSResponse.donor_id).where(
+            SOSResponse.sos_event_id == event_id,
+            SOSResponse.outcome == "accepted",
+        )
+    )).scalars())
+    if not accepted_donors:
+        return 0
+
+    rewards = (await db.execute(
+        select(SOSReward.donor_id, SOSReward.status).where(
+            SOSReward.sos_event_id == event_id,
+            SOSReward.donor_id.in_(accepted_donors),
+        )
+    )).all()
+    reward_status_by_donor = {row.donor_id: row.status for row in rewards}
+    terminal_statuses = {"compensation_proposed", "mock_ready", "not_completed"}
+    return sum(
+        reward_status_by_donor.get(donor_id) not in terminal_statuses
+        for donor_id in accepted_donors
+    )
 
 
 # ── Endpoints ─────────────────────────────────────────────────────
@@ -310,6 +336,18 @@ async def complete_sos_event(
         return _event_out(event, message="Ca SOS đã hoàn tất")
     if event.status == "cancelled":
         raise HTTPException(status_code=409, detail="Ca SOS đã bị hủy")
+    if event.status not in ("fulfilled", "expired"):
+        raise HTTPException(
+            status_code=409,
+            detail="Chỉ hoàn tất ca đã dừng tuyển người hiến",
+        )
+
+    pending_followups = await _pending_reward_followup_count(db, event_id)
+    if pending_followups:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Còn {pending_followups} người nhận lời đang chờ xác nhận hiến hoặc phương án hỗ trợ",
+        )
 
     previous_status = event.status
     event.status = "completed"
@@ -340,8 +378,10 @@ async def list_event_notifications(
     principal: Principal = Depends(require_staff),
 ):
     """Ai đã được gọi, ở vòng nào, qua kênh gì — nhật ký ghi vết của lời kêu gọi."""
-    if not await db.get(SOSEvent, event_id):
+    event = await db.get(SOSEvent, event_id)
+    if not event:
         raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện SOS")
+    _require_event_facility(event, principal)
 
     rows = (await db.execute(
         select(SOSNotification)
@@ -370,11 +410,7 @@ async def list_responders(
     if not event:
         raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện SOS")
 
-    if principal.role != "admin" and event.facility_id and principal.facility_id != event.facility_id:
-        raise HTTPException(
-            status_code=403,
-            detail="Chỉ cơ sở phát lời kêu gọi mới xem được danh sách người nhận lời",
-        )
+    _require_event_facility(event, principal)
 
     rows = (await db.execute(
         select(SOSResponse)
@@ -568,7 +604,7 @@ async def confirm_sos_reward_donation(
     db: AsyncSession = Depends(get_db),
     principal: Principal = Depends(require_staff),
 ):
-    """Cơ sở ghi nhận kết quả hiến; không nhận/tải lên giấy tờ y tế hay phát voucher thật."""
+    """Ghi nhận xác nhận của nhân viên cơ sở trong demo; không nhận giấy tờ y tế hay phát voucher thật."""
     event = await db.scalar(
         select(SOSEvent).where(SOSEvent.id == event_id).with_for_update()
     )
@@ -609,6 +645,14 @@ async def confirm_sos_reward_donation(
     now = datetime.now(timezone.utc)
     reward.decision_at = now
     if req.donated:
+        donor = await db.get(Donor, donor_id)
+        if donor is None:
+            raise HTTPException(status_code=404, detail="Không tìm thấy hồ sơ người hiến")
+        last_donation_at = donor.last_donation_at
+        if last_donation_at is not None and last_donation_at.tzinfo is None:
+            last_donation_at = last_donation_at.replace(tzinfo=timezone.utc)
+        if last_donation_at is None or last_donation_at < now:
+            donor.last_donation_at = now
         reward.status = "mock_ready"
         reward.proposed_amount_vnd = 100_000 if reward.role == "primary" else 80_000
         reward.donation_confirmed_at = now
@@ -621,6 +665,7 @@ async def confirm_sos_reward_donation(
         "event_id": event_id, "donor_id": donor_id,
         "donated": req.donated, "role": reward.role,
         "mock_only": True,
+        "confirmation_source": "facility_attestation",
     })
     await db.commit()
     await db.refresh(reward)

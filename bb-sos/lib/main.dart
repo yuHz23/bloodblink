@@ -16,8 +16,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import 'screens/home_screen.dart';
-import 'screens/sos_active_screen.dart';
 import 'screens/donor_profile_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/settings_screen.dart';
@@ -226,7 +224,6 @@ class _MainNavigationState extends State<MainNavigation> {
   int _currentIndex = 0;
 
   final List<Widget> _screens = const [
-    HomeScreen(),
     DonorProfileScreen(),
     HistoryScreen(),
     SettingsScreen(),
@@ -240,11 +237,6 @@ class _MainNavigationState extends State<MainNavigation> {
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) => setState(() => _currentIndex = index),
         destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: 'Trang chủ',
-          ),
           NavigationDestination(
             icon: Icon(Icons.person_outlined),
             selectedIcon: Icon(Icons.person),

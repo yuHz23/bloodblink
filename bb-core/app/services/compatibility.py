@@ -3,7 +3,7 @@ BB-Core — ABO/RhD compatibility rules for blood component matching.
 
 Per TT 26/2013/TT-BYT and international transfusion standards:
 - RBC and Whole Blood: recipient must be compatible with donor (standard table)
-- Plasma: compatibility is INVERSE of RBC (O plasma can go to anyone, AB plasma only to AB)
+- Plasma: compatibility is INVERSE of RBC; donor plasma antibodies determine the ABO direction
 - Platelets: preferably ABO-identical; if not available, compatible per RBC rules
   with volume limits
 
@@ -55,19 +55,18 @@ RBC_COMPATIBILITY: dict[str, set[str]] = {
     "AB+": {"AB+"},
 }
 
-# Plasma: INVERSE compatibility (donor ABO gives to recipient ABO)
-# Key = donor ABO+RhD, Value = set of acceptable recipient types
-# Note: plasma compatibility depends on ABO only, RhD is less critical
+# Plasma: donor plasma antibodies determine ABO compatibility.
+# Key = donor ABO+RhD, Value = acceptable recipient types. RhD is ignored for plasma.
 PLASMA_COMPATIBILITY: dict[str, set[str]] = {
-    # O plasma → all ABO types (universal plasma donor)
-    "O-":  {"O-", "O+", "A-", "A+", "B-", "B+", "AB-", "AB+"},
-    "O+":  {"O-", "O+", "A-", "A+", "B-", "B+", "AB-", "AB+"},
-    "A-":  {"A-", "A+", "AB-", "AB+"},
-    "A+":  {"A-", "A+", "AB-", "AB+"},
-    "B-":  {"B-", "B+", "AB-", "AB+"},
-    "B+":  {"B-", "B+", "AB-", "AB+"},
-    "AB-": {"AB-", "AB+"},
-    "AB+": {"AB+", "AB-"},
+    # Group O plasma has anti-A and anti-B; group AB plasma has neither.
+    "O-":  {"O-", "O+"},
+    "O+":  {"O-", "O+"},
+    "A-":  {"O-", "O+", "A-", "A+"},
+    "A+":  {"O-", "O+", "A-", "A+"},
+    "B-":  {"O-", "O+", "B-", "B+"},
+    "B+":  {"O-", "O+", "B-", "B+"},
+    "AB-": {"O-", "O+", "A-", "A+", "B-", "B+", "AB-", "AB+"},
+    "AB+": {"O-", "O+", "A-", "A+", "B-", "B+", "AB-", "AB+"},
 }
 
 # Platelets: preferably ABO-identical, but can use RBC-compatible if needed

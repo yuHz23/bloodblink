@@ -36,6 +36,7 @@ Pods/
 __pycache__/
 *.py[cod]
 .venv/
+.venv_wsl/
 venv/
 *.egg-info/
 
@@ -51,6 +52,8 @@ server-*.log
 .idea/
 Thumbs.db
 .DS_Store
+/cloudflared.exe
+/pitch_deck/~$*
 
 # ── Dữ liệu mô phỏng sinh ra được ───────────────────────────────
 # Giữ mã sinh, bỏ kết quả: chạy lại `bb-sim/simulation.py` là có, mà tệp thì to.

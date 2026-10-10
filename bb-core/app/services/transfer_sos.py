@@ -131,6 +131,7 @@ async def start_sos_if_transfer_exhausted(
     else:
         event = existing
         previous_target = event.target_count
+        shortfall_changed = remaining != previous_target
         event.target_count = remaining
         if remaining == 0 or event.accept_count >= remaining:
             event.status = "fulfilled"
@@ -138,7 +139,7 @@ async def start_sos_if_transfer_exhausted(
             await db.refresh(event)
             return event
 
-        reopened = event.status in ("fulfilled", "expired")
+        reopened = event.status in ("fulfilled", "expired") and shortfall_changed
         if reopened:
             event.status = "open"
             event.ring = 0
@@ -147,7 +148,7 @@ async def start_sos_if_transfer_exhausted(
         # A newly exposed shortfall can require more invitations while the
         # same SOS is already open. dispatch_ring excludes donors already
         # invited, so retrying is safe and does not send duplicate alerts.
-        if event.status == "open" and (reopened or remaining > previous_target):
+        if event.status == "open" and shortfall_changed:
             result, auto_escalations = await dispatch_initial_rings(db, event)
             if result.notified == 0 and event.ring >= 3:
                 event.status = "expired"

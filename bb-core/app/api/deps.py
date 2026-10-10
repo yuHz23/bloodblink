@@ -57,7 +57,7 @@ def _is_local_bypass_request(request: Request) -> bool:
 
     origin = request.headers.get("origin")
     if not origin:
-        return True
+        return False
     try:
         parsed = urlsplit(origin)
         return (
