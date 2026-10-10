@@ -169,6 +169,12 @@ async def select_donors(
 
 def build_message(event: SOSEvent, facility_name: Optional[str]) -> tuple[str, str]:
     """Tiêu đề và nội dung thông báo hiển thị trên điện thoại."""
+    if event.urgency == "mock_test":
+        return (
+            "KIỂM THỬ — SOS mô phỏng vòng 0",
+            "Thông báo kiểm thử gửi riêng tới thiết bị này. Đây không phải yêu cầu hiến máu thật.",
+        )
+
     blood = f"{event.abo or ''}{event.rh or ''}".strip() or "phù hợp"
     component = COMPONENT_LABEL.get((event.component_code or "WB").upper(),
                                     event.component_code or "máu")
