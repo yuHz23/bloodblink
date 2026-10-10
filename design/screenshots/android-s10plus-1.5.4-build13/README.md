@@ -10,10 +10,12 @@ The set covers all four main navigation tabs: profile, donation history, notific
 | Donation history | [02-history.png](02-history.png) |
 | Notification settings | [03-notifications-settings.png](03-notifications-settings.png) |
 | Nearby facilities | [04-nearby-facilities-redacted.png](04-nearby-facilities-redacted.png) |
+| Mock SOS delivery | [05-sos-mock-ring0-delivered-redacted.png](05-sos-mock-ring0-delivered-redacted.png) |
 
 Privacy edits applied before committing:
 
 - Profile: donor-specific values are masked.
 - Nearby facilities: distance and travel-time values are masked.
 - Notification settings: the API URL is an example placeholder, not the device's configured URL.
+- Mock SOS delivery: unrelated notification cards are masked; the test-only title and message are retained.
 - Donation history was empty on the device when captured.
