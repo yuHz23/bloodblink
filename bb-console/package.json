@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5174 --strictPort",
+    "dev:theme1": "vite --mode theme1 --host 127.0.0.1 --port 5177 --strictPort",
     "dev:sim:hospital": "vite --mode hospital --host 127.0.0.1 --port 5175 --strictPort",
     "dev:sim:citizen": "vite --mode citizen --host 127.0.0.1 --port 5176 --strictPort",
     "build": "tsc -b && vite build",
