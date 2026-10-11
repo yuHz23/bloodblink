@@ -35,6 +35,9 @@ class SosInboxService with WidgetsBindingObserver {
   /// Mã lời kêu gọi đã dựng thông báo, để không rung lại mỗi lượt hỏi.
   final Set<String> _announced = {};
 
+  /// Trả lời trên máy rồi thì không dựng lại thẻ/thông báo nếu API cũ còn trả nó.
+  final Set<String> _answered = {};
+
   Timer? _timer;
   String? _donorId;
   bool _ready = false;
@@ -51,6 +54,7 @@ class SosInboxService with WidgetsBindingObserver {
   /// 45 giây: đủ dày để bắt kịp một vòng leo thang (mốc gần nhau nhất là 10
   /// phút), đủ thưa để không hao pin.
   static const _pollInterval = Duration(seconds: 45);
+  static const _answeredIdsKey = 'sos_answered_notification_ids';
 
   Future<void> init() async {
     if (_ready) return;
@@ -63,6 +67,8 @@ class SosInboxService with WidgetsBindingObserver {
 
     final android = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
+    final prefs = await SharedPreferences.getInstance();
+    _answered.addAll(prefs.getStringList(_answeredIdsKey) ?? const []);
     await android?.createNotificationChannel(_channel);
     await android?.requestNotificationsPermission();
 
@@ -204,13 +210,22 @@ class SosInboxService with WidgetsBindingObserver {
 
     try {
       final items = await _api.fetchSosInbox(donorId);
-      pending.value = items;
-
       final prefs = await SharedPreferences.getInstance();
+      final live = items.map((i) => i.notificationId).toSet();
+      final answeredBeforePrune = _answered.length;
+      _answered.removeWhere((id) => !live.contains(id));
+      if (_answered.length != answeredBeforePrune) {
+        await prefs.setStringList(_answeredIdsKey, _answered.toList());
+      }
+      final visibleItems = items
+          .where((item) => !_answered.contains(item.notificationId))
+          .toList();
+      pending.value = visibleItems;
+
       final notificationsEnabled = prefs.getBool('push_notifications') ?? true;
       final sosAlertsEnabled = prefs.getBool('sos_alerts') ?? true;
 
-      for (final item in items) {
+      for (final item in visibleItems) {
         if (_announced.contains(item.notificationId)) continue;
         if (!notificationsEnabled || !sosAlertsEnabled) continue;
         await _show(item);
@@ -218,7 +233,6 @@ class SosInboxService with WidgetsBindingObserver {
       }
 
       // Lời kêu gọi đã đóng thì quên đi, để lần sau có sự kiện mới vẫn báo.
-      final live = items.map((i) => i.notificationId).toSet();
       _announced.retainWhere(live.contains);
     } on ApiException catch (e) {
       // Phiên vừa hết hạn giữa chừng: interceptor đã bỏ token, lấy phiên mới rồi
@@ -258,10 +272,22 @@ class SosInboxService with WidgetsBindingObserver {
   }
 
   /// Bỏ một lời kêu gọi khỏi danh sách sau khi người dùng đã trả lời.
-  void markAnswered(String notificationId) {
+  Future<void> markAnswered(String notificationId) async {
+    _answered.add(notificationId);
+    _announced.remove(notificationId);
     pending.value = pending.value
         .where((i) => i.notificationId != notificationId)
         .toList();
-    _plugin.cancel(notificationId.hashCode & 0x7fffffff);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_answeredIdsKey, _answered.toList());
+    } catch (_) {
+      // Keep the in-memory removal even if local preferences are unavailable.
+    }
+    try {
+      await _plugin.cancel(notificationId.hashCode & 0x7fffffff);
+    } catch (_) {
+      // A later inbox refresh still keeps an answered notification hidden.
+    }
   }
 }

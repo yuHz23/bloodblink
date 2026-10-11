@@ -416,6 +416,9 @@ class ApiService {
     required String response,
     String? contactPhone,
     String? contactNote,
+    bool? shareLocation,
+    double? latitude,
+    double? longitude,
   }) async {
     final payload = {
       'donor_id': donorId,
@@ -426,6 +429,9 @@ class ApiService {
         'contact_phone': contactPhone.trim(),
       if (contactNote != null && contactNote.trim().isNotEmpty)
         'contact_note': contactNote.trim(),
+      if (shareLocation != null) 'share_location': shareLocation,
+      if (shareLocation == true && latitude != null) 'latitude': latitude,
+      if (shareLocation == true && longitude != null) 'longitude': longitude,
     };
     try {
       await _dio.post('/sos/event/$eventId/respond', data: payload);
@@ -435,23 +441,6 @@ class ApiService {
         return;
       }
       throw ApiException(_describe(e, 'Lỗi phản hồi'), e.response?.statusCode);
-    }
-  }
-
-  /// Ghi nhận lựa chọn tiếp tục hoặc xin dừng của người hiến dự bị SOS.
-  Future<Map<String, dynamic>> chooseSosBackup({
-    required String eventId,
-    required String donorId,
-    required String choice,
-  }) async {
-    try {
-      final response = await _dio.post(
-        '/sos/event/$eventId/rewards/$donorId/choice',
-        data: {'choice': choice},
-      );
-      return Map<String, dynamic>.from(response.data as Map);
-    } on DioException catch (e) {
-      throw ApiException(_describe(e, 'Lỗi cập nhật lựa chọn dự bị'), e.response?.statusCode);
     }
   }
 
@@ -676,9 +665,6 @@ class SosInboxItem {
 
   final String title;
   final String body;
-  final String? rewardRole;
-  final String? rewardStatus;
-  final int? rewardAmountVnd;
 
   SosInboxItem({
     required this.notificationId,
@@ -698,9 +684,6 @@ class SosInboxItem {
     this.facilityName,
     this.title = '',
     this.body = '',
-    this.rewardRole,
-    this.rewardStatus,
-    this.rewardAmountVnd,
   });
 
   factory SosInboxItem.fromJson(Map<String, dynamic> json) {
@@ -722,9 +705,6 @@ class SosInboxItem {
       facilityName: json['facility_name'],
       title: json['title'] ?? '',
       body: json['body'] ?? '',
-      rewardRole: json['reward_role'],
-      rewardStatus: json['reward_status'],
-      rewardAmountVnd: json['reward_amount_vnd'],
     );
   }
 }

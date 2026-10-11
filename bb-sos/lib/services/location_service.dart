@@ -1,7 +1,8 @@
 /// BB-SOS — Location Service
 ///
-/// Biến toạ độ GPS thành ô lưới H3 (res 7 ≈ 1.22 km) NGAY TRÊN MÁY, rồi chỉ
-/// gửi chỉ số ô đó lên máy chủ kèm TTL 4 giờ. Toạ độ thô không rời khỏi thiết bị.
+/// Mặc định biến GPS thành ô lưới H3 (res 7 ≈ 1.22 km) trên máy và chỉ gửi ô
+/// đó lên máy chủ. Toạ độ chính xác chỉ được dùng khi người hiến đồng ý chia sẻ
+/// cho một ca SOS cụ thể.
 ///
 /// Trước P0 app khai báo `geolocator` + `h3_flutter` trong pubspec nhưng không
 /// dùng tới, nên `DonorProfile.h3Cell` luôn null và không ai tìm thấy người hiến.
@@ -61,17 +62,25 @@ class LocationService {
     int resolution = H3Config.resolution,
     Duration ttl = H3Config.cellTtl,
   }) async {
-    await ensurePermission();
-
     // Độ chính xác thấp là đủ: ô lưới rộng hơn 1 km, lấy GPS chính xác cao chỉ
     // tốn pin và thu thập nhiều hơn mức cần thiết.
-    final position = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.low,
-      timeLimit: const Duration(seconds: 20),
+    final position = await currentPosition(
+      accuracy: LocationAccuracy.low,
     );
 
     return cellFor(position.latitude, position.longitude,
         resolution: resolution, ttl: ttl);
+  }
+
+  /// Lấy vị trí GPS sau khi màn hình đã xin đồng ý chia sẻ cho ca SOS cụ thể.
+  Future<Position> currentPosition({
+    LocationAccuracy accuracy = LocationAccuracy.high,
+  }) async {
+    await ensurePermission();
+    return Geolocator.getCurrentPosition(
+      desiredAccuracy: accuracy,
+      timeLimit: const Duration(seconds: 20),
+    );
   }
 
   /// Chuyển một cặp toạ độ thành ô lưới — tách riêng để test được không cần GPS.
